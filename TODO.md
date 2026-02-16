@@ -1,0 +1,8 @@
+- Update package.json to add razorpay
+- Modify order.model.js to match task schema
+- Create checkout.controller.js
+- Create checkout.routes.js
+- Update server.js to include checkout routes
+- Modify checkout.php for Razorpay
+- Create admin/orders.php
+- Install dependencies
