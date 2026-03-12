@@ -1,0 +1,61 @@
+.star-rating-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: sans-serif;
+}
+
+.stars {
+  display: flex;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.star-wrapper {
+  position: relative;
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+}
+
+/* Base SVG Styles */
+.star-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Empty Star Color */
+.star-empty {
+  fill: #e0e0e0;
+  transition: fill 0.2s ease;
+}
+
+/* Filled Star Color */
+.star-filled {
+  fill: #f59e0b; /* Gold/Amber color */
+}
+
+/* Overlay Logic */
+.star-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none; /* Important: lets mouse events pass to wrapper */
+}
+
+.star-overlay.full {
+  width: 100%;
+}
+
+.star-overlay.half {
+  width: 50%;
+}
+
+.rating-label {
+  font-weight: bold;
+  color: #333;
+  min-width: 30px;
+}

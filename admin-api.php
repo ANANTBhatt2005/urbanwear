@@ -40,14 +40,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$product_id) throw new Exception('Missing product ID');
 
                 $product_data = [
-                    'title' => $_POST['title'] ?? '',
-                    'price' => (float)($_POST['price'] ?? 0),
-                    'stock' => (int)($_POST['stock'] ?? 0),
-                    'category' => $_POST['category'] ?? '',
-                    'description' => $_POST['description'] ?? '',
-                     'images' => isset($_POST['images']) ? (is_array($_POST['images']) ? $_POST['images'] : [$_POST['images']]) : []
+                    'title'       => $_POST['title'] !== '' ? $_POST['title'] : null,
+                    'price'       => isset($_POST['price']) && $_POST['price'] !== '' ? (float)$_POST['price'] : null,
+                    'stock'       => isset($_POST['stock']) && $_POST['stock'] !== '' ? (int)$_POST['stock'] : null,
+                    'category'    => $_POST['category'] !== '' ? $_POST['category'] : null,
+                    'description' => $_POST['description'] !== '' ? $_POST['description'] : null,
+                    'images'      => isset($_POST['images']) ? (is_array($_POST['images']) ? $_POST['images'] : [$_POST['images']]) : null
                 ];
                 
+                // Remove null values so we only send provided fields
+                $product_data = array_filter($product_data, function($val) { return $val !== null; });
+
                 $apiRes = $API->put('/api/v1/admin/products/' . $product_id, $product_data, $token);
                 $response = $apiRes;
                 break;
@@ -69,6 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $apiRes = $API->put('/api/v1/admin/orders/' . $order_id . '/status', ['orderStatus' => $status], $token);
                 $response = $apiRes;
                 break;
+
 
             default:
                 throw new Exception("Unknown action: $action");

@@ -8,8 +8,6 @@ if (!$id) {
     exit;
 }
 
-
-
 $res = $API->get('/api/v1/products/' . $id);
 if (!$res['success']) {
     http_response_code(404);
@@ -17,27 +15,37 @@ if (!$res['success']) {
     exit;
 }
 $p = $res['data'];
-$productId = (string)($p['_id'] ?? $p['id'] ?? '');
-$productName = $p['title'] ?? $p['name'] ?? 'Untitled';
-$productPrice = isset($p['price']) ? (float)$p['price'] : 0;
+$productId       = (string)($p['_id'] ?? $p['id'] ?? '');
+$productName     = $p['title'] ?? $p['name'] ?? 'Untitled';
+$productPrice    = isset($p['price']) ? (float)$p['price'] : 0;
 $productDiscount = isset($p['discount_percentage']) ? (float)$p['discount_percentage'] : 0;
 $discountedPrice = $productPrice - ($productPrice * $productDiscount / 100);
-$images = (is_array($p['images']) && count($p['images']) > 0) ? $p['images'] : [$p['image'] ?? 'https://via.placeholder.com/800'];
-$mainImg = $images[0];
+$images          = (is_array($p['images']) && count($p['images']) > 0) ? $p['images'] : [$p['image'] ?? 'https://via.placeholder.com/800'];
+$mainImg         = $images[0];
 
-// --- DSS DATA: REVIEWS & SUMMARY ---
+// --- DSS DATA ---
 $reviewsData = [];
 $summary = ['averageRating' => 0, 'totalCount' => 0, 'distribution' => [1=>0, 2=>0, 3=>0, 4=>0, 5=>0]];
 $isTrending = false;
 
-$revRes = $API->get('/api/v1/products/' . $productId . '/reviews');
-if ($revRes['success']) {
-    $reviewsData = $revRes['data'] ?? [];
-}
-
-$sumRes = $API->get('/api/v1/reviews/summary/' . $productId);
-if ($sumRes['success']) {
-    $summary = $sumRes['data'];
+if (isset($p['reviews']) && is_array($p['reviews'])) {
+    foreach ($p['reviews'] as $rev) {
+        $rtg = (int)($rev['rating'] ?? 0);
+        if ($rtg >= 1 && $rtg <= 5) {
+            $summary['distribution'][$rtg]++;
+        }
+        // Map user -> userId to maintain frontend template compatibility
+        $rev['userId'] = $rev['user'] ?? ['name' => 'Customer'];
+        $rev['reviewText'] = $rev['comment'] ?? '';
+        $rev['verifiedBuyer'] = true; // Simplified for UI
+        $reviewsData[] = $rev;
+    }
+    usort($reviewsData, function($a, $b) {
+        return strtotime($b['createdAt']) - strtotime($a['createdAt']);
+    });
+    
+    $summary['totalCount'] = count($reviewsData);
+    $summary['averageRating'] = isset($p['rating']) ? (float)$p['rating'] : 0;
 }
 
 $trendRes = $API->get('/api/v1/products/trending?limit=10');
@@ -47,300 +55,998 @@ if ($trendRes['success']) {
     }
 }
 
-// --- KEYWORD DSS LOGIC ---
+// --- KEYWORD DSS ---
 $keywords = [
-    'Fabric Quality' => ['fabric', 'material', 'cloth', 'cotton', 'quality'],
-    'Comfort' => ['comfortable', 'soft', 'comfort', 'easy'],
-    'Fit' => ['fit', 'size', 'fitting', 'perfect'],
-    'Style' => ['style', 'look', 'design', 'trendy', 'fashion'],
-    'Value' => ['value', 'price', 'money', 'worth', 'cheap', 'budget']
+    'Fabric Quality' => ['fabric','material','cloth','cotton','quality'],
+    'Comfort'        => ['comfortable','soft','comfort','easy'],
+    'Fit'            => ['fit','size','fitting','perfect'],
+    'Style'          => ['style','look','design','trendy','fashion'],
+    'Value'          => ['value','price','money','worth','cheap','budget']
 ];
 $keywordScores = array_fill_keys(array_keys($keywords), 0);
-foreach($reviewsData as $rev) {
+foreach ($reviewsData as $rev) {
     $txt = strtolower($rev['reviewText'] ?? '');
-    foreach($keywords as $key => $matches) {
-        foreach($matches as $m) {
-            if(strpos($txt, $m) !== false) {
-                $keywordScores[$key]++;
-                break;
-            }
+    foreach ($keywords as $key => $matches) {
+        foreach ($matches as $m) {
+            if (strpos($txt, $m) !== false) { $keywordScores[$key]++; break; }
         }
     }
 }
 arsort($keywordScores);
-$topKeywords = array_filter($keywordScores, function($v) { return $v > 0; });
+$topKeywords = array_filter($keywordScores, function($v){ return $v > 0; });
+
+function renderStarRating($rating) {
+    $html = ''; $rating = round($rating * 2) / 2;
+    for ($i = 1; $i <= 5; $i++) {
+        if ($rating >= $i)            $html .= '<i class="fa-solid fa-star"></i>';
+        elseif ($rating >= $i - 0.5) $html .= '<i class="fa-solid fa-star-half-stroke"></i>';
+        else                          $html .= '<i class="fa-regular fa-star"></i>';
+    }
+    return $html;
+}
+
+// Complete the Look
+$lookRes      = $API->get('/api/v1/products/?category=' . urlencode($p['category']) . '&limit=8');
+$lookProducts = [];
+if (!empty($lookRes['success']) && is_array($lookRes['data'])) {
+    foreach ($lookRes['data'] as $lp) {
+        $lid = (string)($lp['_id'] ?? $lp['id'] ?? '');
+        if ($lid === $productId) continue;
+        $lookProducts[] = [
+            'id'    => $lid,
+            'name'  => $lp['title'] ?? $lp['name'] ?? 'Untitled',
+            'price' => isset($lp['price']) ? (float)$lp['price'] : 0,
+            'disc'  => isset($lp['discount_percentage']) ? (float)$lp['discount_percentage'] : 0,
+            'img'   => (is_array($lp['images']) && count($lp['images'])) ? $lp['images'][0] : ($lp['image'] ?? 'https://via.placeholder.com/400'),
+        ];
+        if (count($lookProducts) >= 4) break;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title><?php echo htmlspecialchars($productName); ?> | UrbanWear</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <style>
-        :root { --premium-black: #1a1a1a; --urban-gold: #c5a059; --bg-light: #fdfdfd; }
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg-light); color: var(--premium-black); }
-        .product-container { max-width: 1200px; margin: 40px auto; display: flex; gap: 40px; padding: 0 20px; }
-        
-        /* LEFT: GALLERY */
-        .gallery-section { flex: 1; display: flex; gap: 15px; }
-        .thumbnails { display: flex; flex-direction: column; gap: 10px; }
-        .thumbnails img { width: 70px; height: 90px; object-fit: cover; border: 1px solid #eee; cursor: pointer; border-radius: 4px; transition: 0.2s; }
-        .thumbnails img:hover { border-color: var(--urban-gold); }
-        .main-image-container { flex: 1; position: relative; overflow: hidden; border-radius: 8px; border: 1px solid #eee; background: #fff; height: 600px; }
-        .main-image { width: 100%; height: 100%; object-fit: contain; transition: transform 0.3s ease; }
-        .main-image-container:hover .main-image { transform: scale(1.1); }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title><?php echo htmlspecialchars($productName); ?> — URBANWEAR</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/search-autocomplete.css">
+<style>
+/* ═══════════════════════════════════════════
+   URBANWEAR PRODUCT PAGE
+   Editorial Luxury — COS × SSENSE × Mr. Porter
+   ═══════════════════════════════════════════ */
+:root {
+  --ink:     #141210;
+  --warm:    #f7f4ef;
+  --surface: #ffffff;
+  --border:  #e8e4dd;
+  --mid:     #7a7470;
+  --muted:   #b0aaa3;
+  --gold:    #b89a5a;
+  --gold2:   #d4b87a;
+  --rust:    #9e4a24;
+  --grn:     #2d6a4f;
+  --ease:    cubic-bezier(0.16,1,0.3,1);
+}
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body {
+  font-family:'DM Sans',sans-serif;
+  background:var(--warm);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+a { text-decoration:none; color:inherit; }
+::-webkit-scrollbar { width:3px; }
+::-webkit-scrollbar-thumb { background:var(--border); }
 
-        /* RIGHT: DETAILS */
-        .details-section { flex: 1.2; }
-        .breadcrumb { font-size: 0.85rem; color: #888; margin-bottom: 15px; }
-        .product-title { font-size: 2rem; font-weight: 700; margin-bottom: 5px; }
-        .badge-trending { display: inline-block; background: #fff4e5; color: #ff8c00; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; border: 1px solid #ffd8a8; margin-bottom: 10px; }
-        .rating-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
-        .stars-avg { background: #388e3c; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 1rem; font-weight: 700; display: flex; align-items: center; gap: 4px; }
-        .review-count-header { color: #878787; font-weight: 600; font-size: 0.9rem; }
-        .price-tag { font-size: 1.8rem; font-weight: 700; color: #212121; margin: 15px 0; }
-        .price-tag span { font-size: 1rem; color: #878787; text-decoration: line-through; margin-left: 10px; font-weight: 400; }
-        
-        .size-selection { margin: 25px 0; }
-        .size-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; text-transform: uppercase; }
-        .size-btns { display: flex; gap: 10px; }
-        .size-box { border: 1px solid #e0e0e0; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: 600; transition: 0.2s; }
-        .size-box:hover, .size-box.active { border-color: var(--urban-gold); color: var(--urban-gold); background: #fffaf0; }
+/* ── NAV ── */
+.nav {
+  position:sticky; top:0; z-index:500;
+  background:rgba(247,244,239,0.88);
+  backdrop-filter:blur(18px);
+  border-bottom:1px solid var(--border);
+  height:62px;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 56px;
+}
+.nav-logo {
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.2rem; font-weight:600; letter-spacing:5px;
+  text-transform:uppercase; color:var(--ink);
+}
+.nav-links {
+  display:flex; align-items:center; gap:32px;
+}
+.nav-links a {
+  font-size:0.72rem; font-weight:500; letter-spacing:0.18em;
+  text-transform:uppercase; color:var(--mid);
+  transition:color 0.2s;
+}
+.nav-links a:hover { color:var(--ink); }
+.nav-right { display:flex; align-items:center; gap:20px; }
+.nav-cart { position:relative; cursor:pointer; color:var(--ink); }
+.nav-cart-count {
+  position:absolute; top:-8px; right:-10px;
+  width:18px; height:18px; border-radius:50%;
+  background:var(--gold); color:#fff;
+  font-size:0.58rem; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
 
-        .action-btns { display: flex; gap: 15px; margin-top: 30px; }
-        .btn-buy { flex: 1; padding: 18px; border: none; border-radius: 4px; font-weight: 700; font-size: 1rem; cursor: pointer; text-transform: uppercase; background: #fb641b; color: #fff; }
-        .btn-cart { flex: 1; padding: 18px; border: none; border-radius: 4px; font-weight: 700; font-size: 1rem; cursor: pointer; text-transform: uppercase; background: #ff9f00; color: #fff; }
+/* ── BREADCRUMB ── */
+.crumb {
+  padding:18px 56px 0;
+  font-size:0.68rem; color:var(--muted);
+  letter-spacing:0.08em;
+  display:flex; align-items:center; gap:8px;
+}
+.crumb a:hover { color:var(--ink); }
+.crumb-sep { color:var(--border); }
 
-        /* DSS SECTION: REVIEWS */
-        .dss-section { background: #fff; margin-top: 40px; border: 1px solid #eee; border-radius: 8px; padding: 30px; }
-        .dss-grid { display: flex; gap: 40px; }
-        .rating-summary { flex: 1; border-right: 1px solid #eee; padding-right: 40px; }
-        .dist-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 0.85rem; }
-        .bar-bg { flex: 1; height: 6px; background: #eee; border-radius: 10px; overflow: hidden; }
-        .bar-fill { height: 100%; background: #388e3c; border-radius: 10px; }
-        
-        .keyword-insights { flex: 1; }
-        .insight-tag { display: inline-block; background: #f0f5ff; color: #2874f0; padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; font-weight: 600; margin: 0 8px 8px 0; border: 1px solid #dce8ff; }
+/* ══ PRODUCT STAGE ══ */
+.stage {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  min-height:calc(100vh - 62px);
+  max-width:1400px;
+  margin:0 auto;
+  padding:32px 56px 60px;
+  gap:60px;
+  align-items:start;
+}
 
-        .review-list { margin-top: 30px; }
-        .review-item { border-bottom: 1px solid #f0f0f0; padding: 20px 0; }
-        .rev-rating-box { background: #388e3c; color: #fff; font-size: 0.75rem; padding: 1px 6px; border-radius: 3px; font-weight: 700; margin-right: 10px; }
-        .rev-text { color: #212121; line-height: 1.5; margin: 10px 0; }
-        .rev-meta { font-size: 0.8rem; color: #878787; display: flex; align-items: center; gap: 10px; }
-        .verified-tag { color: #388e3c; font-weight: 700; display: flex; align-items: center; gap: 4px; }
-        
-        /* FORM */
-        .review-form-container { margin-top: 40px; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; }
-        .form-title { font-weight: 700; margin-bottom: 15px; }
-        textarea { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; margin-bottom: 15px; font-family: inherit; }
-        .stars-selector { margin-bottom: 15px; display: flex; gap: 5px; font-size: 1.5rem; }
-        .star-in { cursor: pointer; color: #ccc; }
-        .star-in.active { color: #f59e0b; }
-    </style>
+/* ── GALLERY ── */
+.gallery {
+  position:sticky; top:78px;
+  display:flex; gap:12px;
+}
+.gallery-thumbs {
+  display:flex; flex-direction:column;
+  gap:8px; width:64px; flex-shrink:0;
+}
+.gallery-thumb {
+  width:64px; height:80px;
+  border:1.5px solid transparent;
+  border-radius:2px;
+  overflow:hidden; cursor:pointer;
+  transition:border-color 0.25s;
+  background:var(--surface);
+}
+.gallery-thumb img { width:100%; height:100%; object-fit:cover; }
+.gallery-thumb:hover,
+.gallery-thumb.on { border-color:var(--ink); }
+
+.gallery-main {
+  flex:1; position:relative;
+  aspect-ratio:3/4; max-height:680px;
+  overflow:hidden; border-radius:3px;
+  background:var(--surface);
+  cursor:zoom-in;
+}
+.gallery-main img {
+  width:100%; height:100%;
+  object-fit:cover;
+  transition:transform 0.6s var(--ease);
+  transform-origin:center;
+}
+.gallery-main:hover img { transform:scale(1.06); }
+
+/* Trending ribbon */
+.ribbon {
+  position:absolute; top:18px; left:0; z-index:2;
+  background:var(--ink); color:#fff;
+  font-size:0.6rem; font-weight:700; letter-spacing:0.25em;
+  text-transform:uppercase;
+  padding:5px 14px 5px 10px;
+  clip-path:polygon(0 0,100% 0,92% 100%,0 100%);
+}
+
+/* ── DETAILS ── */
+.details {
+  padding-top:8px;
+  animation:fadeSlide 0.55s var(--ease) both;
+}
+@keyframes fadeSlide {
+  from { opacity:0; transform:translateX(18px); }
+  to   { opacity:1; transform:translateX(0); }
+}
+
+.d-category {
+  font-size:0.62rem; font-weight:600; letter-spacing:0.3em;
+  text-transform:uppercase; color:var(--gold);
+  margin-bottom:10px;
+  display:flex; align-items:center; gap:8px;
+}
+.d-category::before {
+  content:''; width:24px; height:1px; background:var(--gold);
+}
+
+.d-title {
+  font-family:'Cormorant Garamond',serif;
+  font-size:2.8rem; font-weight:400; line-height:1.08;
+  letter-spacing:-0.01em; color:var(--ink);
+  margin-bottom:16px;
+}
+.d-title em { font-style:italic; }
+
+/* Rating pill */
+.d-rating {
+  display:flex; align-items:center; gap:10px;
+  margin-bottom:20px;
+}
+.d-rating-score {
+  background:var(--grn); color:#fff;
+  font-size:0.78rem; font-weight:700;
+  padding:3px 8px; border-radius:3px;
+  display:flex; align-items:center; gap:4px;
+}
+.d-stars { color:var(--gold); font-size:0.78rem; display:flex; gap:1px; }
+.d-rating-count { font-size:0.72rem; color:var(--mid); }
+
+/* Price */
+.d-price-row {
+  display:flex; align-items:baseline; gap:12px;
+  margin:20px 0 24px;
+  padding:20px 0;
+  border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+}
+.d-price {
+  font-family:'Cormorant Garamond',serif;
+  font-size:2.4rem; font-weight:500; color:var(--ink);
+  letter-spacing:-0.02em;
+}
+.d-price-original {
+  font-size:1rem; color:var(--muted);
+  text-decoration:line-through;
+}
+.d-price-tag {
+  font-size:0.72rem; font-weight:700; letter-spacing:0.1em;
+  text-transform:uppercase;
+  background:var(--rust); color:#fff;
+  padding:3px 10px; border-radius:2px;
+  align-self:center;
+}
+
+/* Stock */
+.d-stock {
+  display:flex; align-items:center; gap:8px;
+  font-size:0.72rem; font-weight:500;
+  margin-bottom:24px; letter-spacing:0.04em;
+}
+.d-stock-dot {
+  width:7px; height:7px; border-radius:50%;
+}
+
+/* Sizes */
+.d-size-label {
+  font-size:0.65rem; font-weight:700; letter-spacing:0.22em;
+  text-transform:uppercase; color:var(--mid);
+  margin-bottom:10px;
+}
+.d-sizes {
+  display:flex; gap:8px; flex-wrap:wrap;
+  margin-bottom:28px;
+}
+.d-size {
+  width:48px; height:48px;
+  display:flex; align-items:center; justify-content:center;
+  border:1px solid var(--border);
+  font-size:0.8rem; font-weight:600;
+  cursor:pointer; transition:all 0.22s;
+  border-radius:2px;
+  color:var(--ink);
+}
+.d-size:hover { border-color:var(--ink); }
+.d-size.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+
+/* Buttons */
+.d-actions { display:flex; gap:10px; margin-bottom:28px; }
+
+.btn-buy {
+  flex:2; padding:17px 24px;
+  background:var(--ink); color:#fff;
+  border:none; border-radius:2px;
+  font-family:'DM Sans',sans-serif;
+  font-size:0.75rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.22em;
+  cursor:pointer; transition:all 0.28s var(--ease);
+  display:flex; align-items:center; justify-content:center; gap:10px;
+}
+.btn-buy:hover { background:var(--rust); letter-spacing:0.3em; }
+
+.btn-cart {
+  flex:3; padding:17px 24px;
+  background:transparent; color:var(--ink);
+  border:1.5px solid var(--ink); border-radius:2px;
+  font-family:'DM Sans',sans-serif;
+  font-size:0.75rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.22em;
+  cursor:pointer; transition:all 0.28s var(--ease);
+  display:flex; align-items:center; justify-content:center; gap:10px;
+}
+.btn-cart:hover { background:var(--ink); color:#fff; }
+
+#cartMsg {
+  font-size:0.78rem; font-weight:600;
+  color:var(--grn); letter-spacing:0.04em;
+  min-height:20px; margin-bottom:4px;
+}
+
+/* Trust strip */
+.d-trust {
+  display:grid; grid-template-columns:1fr 1fr 1fr;
+  gap:1px; background:var(--border);
+  border:1px solid var(--border);
+  border-radius:2px; overflow:hidden;
+  margin-bottom:28px;
+}
+.d-trust-item {
+  background:var(--surface);
+  padding:12px 10px;
+  display:flex; align-items:center; gap:8px;
+  font-size:0.68rem; font-weight:500;
+  color:var(--mid); letter-spacing:0.04em;
+}
+.d-trust-item i { color:var(--gold); font-size:0.85rem; }
+
+/* Accordion */
+.acc { border-top:1px solid var(--border); }
+.acc-item { border-bottom:1px solid var(--border); }
+.acc-btn {
+  width:100%; padding:16px 0;
+  display:flex; align-items:center; justify-content:space-between;
+  background:none; border:none; cursor:pointer;
+  font-family:'DM Sans',sans-serif;
+  font-size:0.72rem; font-weight:700; letter-spacing:0.18em;
+  text-transform:uppercase; color:var(--ink);
+  text-align:left;
+  transition:color 0.2s;
+}
+.acc-btn:hover { color:var(--gold); }
+.acc-icon {
+  font-size:1rem; color:var(--muted);
+  transition:transform 0.3s var(--ease), color 0.2s;
+}
+.acc-item.open .acc-icon { transform:rotate(45deg); color:var(--ink); }
+.acc-body {
+  display:grid; grid-template-rows:0fr;
+  transition:grid-template-rows 0.35s var(--ease);
+}
+.acc-item.open .acc-body { grid-template-rows:1fr; }
+.acc-inner {
+  overflow:hidden;
+  font-size:0.83rem; color:var(--mid);
+  line-height:1.8; font-weight:300;
+  padding-bottom:0;
+  transition:padding 0.3s;
+}
+.acc-item.open .acc-inner { padding-bottom:18px; }
+.acc-inner ul { padding-left:16px; }
+.acc-inner ul li { margin-bottom:4px; }
+
+/* ══ REVIEWS SECTION ══ */
+.reviews-wrap {
+  max-width:1400px; margin:0 auto;
+  padding:0 56px 72px;
+}
+.section-head {
+  display:flex; align-items:baseline; gap:16px;
+  margin-bottom:36px;
+  padding-bottom:20px;
+  border-bottom:1px solid var(--border);
+}
+.section-title {
+  font-family:'Cormorant Garamond',serif;
+  font-size:2rem; font-weight:400;
+  letter-spacing:-0.01em; color:var(--ink);
+}
+.section-sub {
+  font-size:0.75rem; color:var(--muted);
+  letter-spacing:0.08em;
+}
+
+.rev-grid {
+  display:grid;
+  grid-template-columns:320px 1fr;
+  gap:56px;
+}
+
+/* Rating summary */
+.rev-summary { }
+.rev-big-score {
+  font-family:'Cormorant Garamond',serif;
+  font-size:4.5rem; font-weight:300;
+  color:var(--ink); line-height:1;
+  margin-bottom:4px;
+}
+.rev-big-stars { color:var(--gold); font-size:1rem; display:flex; gap:2px; margin-bottom:8px; }
+.rev-big-count { font-size:0.78rem; color:var(--mid); margin-bottom:28px; }
+
+.dist-row {
+  display:flex; align-items:center; gap:10px;
+  margin-bottom:9px; font-size:0.72rem; color:var(--mid);
+}
+.dist-lbl { width:24px; text-align:right; font-weight:500; }
+.dist-bar {
+  flex:1; height:4px; background:var(--border);
+  border-radius:2px; overflow:hidden;
+}
+.dist-fill { height:100%; background:var(--gold); border-radius:2px; transition:width 1s var(--ease); }
+.dist-n { width:28px; text-align:right; }
+
+/* Keyword chips */
+.kw-wrap { margin-top:28px; padding-top:24px; border-top:1px solid var(--border); }
+.kw-title {
+  font-size:0.62rem; font-weight:700; letter-spacing:0.22em;
+  text-transform:uppercase; color:var(--mid); margin-bottom:12px;
+}
+.kw-chips { display:flex; flex-wrap:wrap; gap:7px; }
+.kw-chip {
+  padding:5px 12px; border:1px solid var(--border);
+  font-size:0.7rem; font-weight:500; color:var(--mid);
+  border-radius:2px; transition:all 0.2s;
+  background:var(--surface);
+}
+.kw-chip:hover { border-color:var(--gold); color:var(--gold); }
+
+.dss-tip {
+  margin-top:20px; padding:14px 16px;
+  background:var(--surface); border:1px solid var(--border);
+  border-left:3px solid var(--gold);
+  font-size:0.72rem; color:var(--mid); line-height:1.6;
+}
+.dss-tip strong { color:var(--gold); letter-spacing:0.06em; font-size:0.62rem; display:block; margin-bottom:4px; text-transform:uppercase; }
+
+/* Review cards */
+.rev-list { }
+.rev-card {
+  padding:24px 0;
+  border-bottom:1px solid var(--border);
+  animation:fadeUp 0.4s var(--ease) both;
+}
+@keyframes fadeUp { from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)} }
+.rev-card-top {
+  display:flex; align-items:center; gap:12px;
+  margin-bottom:12px;
+}
+.rev-score {
+  background:var(--grn); color:#fff;
+  font-size:0.7rem; font-weight:700;
+  padding:3px 8px; border-radius:2px;
+  display:flex; align-items:center; gap:3px;
+}
+.rev-headline {
+  font-size:0.88rem; font-weight:600; color:var(--ink);
+}
+.rev-text {
+  font-size:0.82rem; color:var(--mid);
+  line-height:1.75; font-weight:300;
+  margin-bottom:12px;
+}
+.rev-meta {
+  display:flex; align-items:center; gap:14px;
+  font-size:0.68rem; color:var(--muted);
+}
+.rev-name { font-weight:600; color:var(--ink); font-size:0.72rem; }
+.rev-verified {
+  display:flex; align-items:center; gap:4px;
+  color:var(--grn); font-weight:700; font-size:0.67rem;
+  letter-spacing:0.04em;
+}
+
+/* Review notice */
+.rev-notice {
+  background:var(--surface);
+  border:1px solid var(--border);
+  padding:24px; text-align:center;
+  border-radius:2px; margin-bottom:24px;
+}
+.rev-notice-icon { font-size:1.5rem; margin-bottom:8px; }
+.rev-notice-title {
+  font-size:0.92rem; font-weight:600;
+  color:var(--ink); margin-bottom:6px;
+}
+.rev-notice-sub { font-size:0.78rem; color:var(--mid); font-weight:300; }
+
+/* ══ COMPLETE THE LOOK ══ */
+.look-wrap {
+  max-width:1400px; margin:0 auto;
+  padding:0 56px 72px;
+}
+.look-grid {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:20px;
+}
+.look-card { cursor:pointer; }
+.look-img {
+  aspect-ratio:3/4;
+  overflow:hidden; border-radius:2px;
+  background:var(--surface);
+  margin-bottom:12px;
+  position:relative;
+}
+.look-img img {
+  width:100%; height:100%; object-fit:cover;
+  transition:transform 0.55s var(--ease);
+}
+.look-card:hover .look-img img { transform:scale(1.06); }
+.look-overlay {
+  position:absolute; inset:0;
+  background:rgba(20,18,16,0);
+  display:flex; align-items:flex-end; justify-content:center;
+  padding-bottom:16px;
+  transition:background 0.3s;
+}
+.look-card:hover .look-overlay { background:rgba(20,18,16,0.22); }
+.look-overlay-btn {
+  background:var(--surface); color:var(--ink);
+  font-size:0.62rem; font-weight:700; letter-spacing:0.2em;
+  text-transform:uppercase; padding:8px 20px;
+  border-radius:1px;
+  transform:translateY(10px); opacity:0;
+  transition:all 0.3s var(--ease);
+}
+.look-card:hover .look-overlay-btn { transform:translateY(0); opacity:1; }
+.look-name {
+  font-size:0.83rem; font-weight:500; color:var(--ink);
+  margin-bottom:4px; line-height:1.3;
+}
+.look-price {
+  font-family:'Cormorant Garamond',serif;
+  font-size:1rem; font-weight:500; color:var(--ink);
+  display:flex; align-items:baseline; gap:8px;
+}
+.look-price s { font-size:0.78rem; color:var(--muted); font-family:'DM Sans',sans-serif; }
+
+/* ══ RECENTLY VIEWED ══ */
+.recent-wrap {
+  max-width:1400px; margin:0 auto;
+  padding:0 56px 80px;
+}
+.recent-grid {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:20px;
+}
+.recent-card { cursor:pointer; }
+.recent-img {
+  aspect-ratio:3/4; overflow:hidden;
+  border-radius:2px; background:var(--surface);
+  margin-bottom:10px;
+}
+.recent-img img { width:100%; height:100%; object-fit:cover; transition:transform 0.5s var(--ease); }
+.recent-card:hover .recent-img img { transform:scale(1.05); }
+.recent-name { font-size:0.78rem; font-weight:500; color:var(--mid); }
+.recent-price {
+  font-family:'Cormorant Garamond',serif;
+  font-size:0.95rem; font-weight:500; color:var(--ink);
+}
+
+/* ── FOOTER SPACER ── */
+.end-gap { height:60px; }
+
+/* Search container */
+.search-container { position:relative; }
+.search-input-wrapper { display:flex; align-items:center; gap:8px; }
+.search-icon-btn { background:none; border:none; cursor:pointer; color:var(--mid); font-size:1rem; padding:0; }
+.search-input {
+  width:0; opacity:0; overflow:hidden;
+  border:none; outline:none; background:none;
+  font-family:'DM Sans',sans-serif; font-size:0.82rem;
+  transition:all 0.3s var(--ease);
+  border-bottom:1px solid transparent;
+}
+.search-input.expanded {
+  width:180px; opacity:1;
+  border-bottom-color:var(--ink); padding-bottom:3px;
+}
+
+/* Responsive */
+@media(max-width:1024px) {
+  .stage { grid-template-columns:1fr; gap:36px; padding:24px 24px 48px; }
+  .gallery { position:static; flex-direction:column; }
+  .gallery-thumbs { flex-direction:row; width:100%; }
+  .gallery-thumb { width:56px; height:70px; }
+  .nav { padding:0 24px; }
+  .crumb { padding:14px 24px 0; }
+  .reviews-wrap,.look-wrap,.recent-wrap { padding:0 24px 48px; }
+  .rev-grid { grid-template-columns:1fr; gap:32px; }
+  .look-grid,.recent-grid { grid-template-columns:1fr 1fr; }
+  .d-title { font-size:2rem; }
+  .d-trust { grid-template-columns:1fr; }
+}
+@media(max-width:560px) {
+  .look-grid,.recent-grid { grid-template-columns:1fr 1fr; gap:12px; }
+  .d-title { font-size:1.7rem; }
+  .d-price { font-size:1.8rem; }
+}
+</style>
 </head>
 <body>
-<nav style="display:flex; justify-content:space-between; align-items:center; padding: 20px 60px; border-bottom:1px solid #eee; background:#fff;">
-    <a href="index.php" style="font-family:'Inter', sans-serif; font-weight:700; letter-spacing:2px; text-decoration:none; color:#000;">URBANWEAR</a>
-    <div style="display:flex; align-items:center; gap:30px;">
-        <a href="men.php" style="text-decoration:none; color:#666; font-size:14px; text-transform:uppercase;">Men</a>
-        <a href="women.php" style="text-decoration:none; color:#666; font-size:14px; text-transform:uppercase;">Women</a>
-        <a href="kids.php" style="text-decoration:none; color:#666; font-size:14px; text-transform:uppercase;">Kids</a>
-        <a href="cart.php" style="position:relative; text-decoration:none; color:#000;">
-            <i class="fa-solid fa-bag-shopping" style="font-size:1.2rem;"></i>
-            <span class="cart-count-badge" style="display:none; position: absolute; top: -8px; right: -12px; background: #c5a059; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 700; min-width: 18px; text-align: center; display: flex; align-items: center; justify-content: center;">0</span>
-        </a>
+
+<!-- ══ NAV ══ -->
+<nav class="nav">
+  <a href="index.php" class="nav-logo">Urbanwear</a>
+  <div class="nav-links">
+    <a href="men.php">Men</a>
+    <a href="women.php">Women</a>
+    <a href="kids.php">Kids</a>
+    <div class="search-container">
+      <div class="search-input-wrapper" id="searchWrapper">
+        <button class="search-icon-btn" id="searchIconBtn"><i class="fa-solid fa-magnifying-glass"></i></button>
+        <input type="text" id="searchInput" class="search-input" placeholder="Search products...">
+      </div>
+      <div class="search-results-dropdown" id="searchResults"></div>
     </div>
+  </div>
+  <div class="nav-right">
+    <a href="cart.php" class="nav-cart">
+      <i class="fa-solid fa-bag-shopping" style="font-size:1.15rem;"></i>
+      <span class="cart-count-badge nav-cart-count" style="display:none;">0</span>
+    </a>
+  </div>
 </nav>
 
-<div class="product-container">
-    <!-- IMAGES -->
-    <div class="gallery-section">
-        <div class="thumbnails">
-            <?php foreach($images as $img): ?>
-                <img src="<?php echo htmlspecialchars($img); ?>" onclick="setMainImage(this.src)">
+<!-- Breadcrumb -->
+<div class="crumb">
+  <a href="index.php">Home</a>
+  <span class="crumb-sep">/</span>
+  <a href="<?php echo $p['category']; ?>.php"><?php echo ucfirst($p['category']); ?></a>
+  <span class="crumb-sep">/</span>
+  <span><?php echo htmlspecialchars($productName); ?></span>
+</div>
+
+<!-- ══ PRODUCT STAGE ══ -->
+<div class="stage">
+
+  <!-- GALLERY -->
+  <div class="gallery">
+    <div class="gallery-thumbs">
+      <?php foreach($images as $i => $img): ?>
+        <div class="gallery-thumb <?php echo $i===0?'on':''; ?>" onclick="setMainImage('<?php echo htmlspecialchars($img); ?>', this)">
+          <img src="<?php echo htmlspecialchars($img); ?>" alt="">
+        </div>
+      <?php endforeach; ?>
+    </div>
+    <div class="gallery-main" id="galleryMain">
+      <?php if($isTrending): ?>
+        <div class="ribbon">🔥 Trending</div>
+      <?php endif; ?>
+      <img id="mainImg" src="<?php echo htmlspecialchars($mainImg); ?>" alt="<?php echo htmlspecialchars($productName); ?>">
+    </div>
+  </div>
+
+  <!-- DETAILS -->
+  <div class="details">
+    <div class="d-category"><?php echo htmlspecialchars(ucfirst($p['category'])); ?></div>
+
+    <h1 class="d-title"><?php
+      $words = explode(' ', $productName);
+      $half  = ceil(count($words)/2);
+      echo htmlspecialchars(implode(' ', array_slice($words,0,$half)));
+      if(count($words) > 2) echo ' <em>' . htmlspecialchars(implode(' ', array_slice($words,$half))) . '</em>';
+    ?></h1>
+
+    <div class="d-rating">
+      <div class="d-rating-score"><?php echo number_format($summary['averageRating'],1); ?> <i class="fa-solid fa-star" style="font-size:0.75em;"></i></div>
+      <div class="d-stars"><?php echo renderStarRating($summary['averageRating']); ?></div>
+      <div class="d-rating-count"><?php echo $summary['totalCount']; ?> ratings · <?php echo count($reviewsData); ?> reviews</div>
+    </div>
+
+    <!-- Price -->
+    <div class="d-price-row">
+      <div class="d-price">
+        ₹<?php echo number_format($productDiscount > 0 ? $discountedPrice : $productPrice); ?>
+      </div>
+      <?php if($productDiscount > 0): ?>
+        <div class="d-price-original">₹<?php echo number_format($productPrice); ?></div>
+        <div class="d-price-tag"><?php echo $productDiscount; ?>% Off</div>
+      <?php endif; ?>
+    </div>
+
+    <!-- Stock -->
+    <div class="d-stock">
+      <div class="d-stock-dot" style="background:<?php echo $p['stock']>10?'var(--grn)':'#f59e0b'; ?>;"></div>
+      <?php echo ($p['stock'] > 10) ? 'In Stock' : 'Only ' . $p['stock'] . ' left'; ?>
+    </div>
+
+    <!-- Sizes -->
+    <div class="d-size-label">Select Size</div>
+    <div class="d-sizes">
+      <?php foreach(['XS','S','M','L','XL','XXL'] as $sz): ?>
+        <div class="d-size" onclick="selectSize(this)"><?php echo $sz; ?></div>
+      <?php endforeach; ?>
+    </div>
+
+    <!-- Actions -->
+    <div class="d-actions">
+      <button class="btn-cart" onclick="handlePageAddToCart(false)">
+        <i class="fa-regular fa-bag-shopping"></i> Add to Bag
+      </button>
+      <button class="btn-buy" onclick="handlePageAddToCart(true)">
+        Buy Now
+      </button>
+    </div>
+    <div id="cartMsg"></div>
+
+    <!-- Trust -->
+    <div class="d-trust">
+      <div class="d-trust-item"><i class="fa-solid fa-truck-fast"></i> Free delivery ₹999+</div>
+      <div class="d-trust-item"><i class="fa-solid fa-rotate-left"></i> 7-day returns</div>
+      <div class="d-trust-item"><i class="fa-solid fa-lock"></i> Secure checkout</div>
+    </div>
+
+    <!-- Accordion -->
+    <div class="acc">
+      <div class="acc-item open">
+        <button class="acc-btn" onclick="toggleAcc(this)">
+          Description <span class="acc-icon">+</span>
+        </button>
+        <div class="acc-body"><div class="acc-inner"><?php echo nl2br(htmlspecialchars($p['description'])); ?></div></div>
+      </div>
+      <div class="acc-item">
+        <button class="acc-btn" onclick="toggleAcc(this)">
+          Details <span class="acc-icon">+</span>
+        </button>
+        <div class="acc-body"><div class="acc-inner">
+          <ul>
+            <li>Category: <?php echo htmlspecialchars(ucfirst($p['category'])); ?></li>
+            <li>SKU: <?php echo htmlspecialchars($productId); ?></li>
+            <li>Fabric: Premium quality blend</li>
+            <li>Fit: Regular fit</li>
+            <li>Stock: <?php echo (int)($p['stock'] ?? 0); ?> units available</li>
+          </ul>
+        </div></div>
+      </div>
+      <div class="acc-item">
+        <button class="acc-btn" onclick="toggleAcc(this)">
+          Care Instructions <span class="acc-icon">+</span>
+        </button>
+        <div class="acc-body"><div class="acc-inner">
+          <ul>
+            <li>Machine wash cold with like colours</li>
+            <li>Do not bleach</li>
+            <li>Tumble dry on low heat</li>
+            <li>Iron on low heat if needed</li>
+            <li>Do not dry clean</li>
+          </ul>
+        </div></div>
+      </div>
+      <div class="acc-item">
+        <button class="acc-btn" onclick="toggleAcc(this)">
+          Shipping &amp; Returns <span class="acc-icon">+</span>
+        </button>
+        <div class="acc-body"><div class="acc-inner">
+          <ul>
+            <li>Free delivery on orders above ₹999</li>
+            <li>Standard delivery: 5–7 business days</li>
+            <li>Express delivery available at checkout</li>
+            <li>Easy 7-day returns — no questions asked</li>
+          </ul>
+        </div></div>
+      </div>
+    </div>
+
+  </div><!-- /details -->
+</div><!-- /stage -->
+
+<!-- ══ REVIEWS ══ -->
+<div class="reviews-wrap">
+  <div class="section-head">
+    <div class="section-title">Ratings &amp; Reviews</div>
+    <div class="section-sub"><?php echo $summary['totalCount']; ?> verified ratings</div>
+  </div>
+
+  <div class="rev-grid">
+
+    <!-- Summary + DSS -->
+    <div class="rev-summary">
+      <div class="rev-big-score"><?php echo number_format($summary['averageRating'],1); ?></div>
+      <div class="rev-big-stars"><?php echo renderStarRating($summary['averageRating']); ?></div>
+      <div class="rev-big-count"><?php echo $summary['totalCount']; ?> ratings · <?php echo count($reviewsData); ?> reviews</div>
+
+      <?php for($i=5;$i>=1;$i--):
+        $pct = ($summary['totalCount']>0) ? ($summary['distribution'][$i]/$summary['totalCount'])*100 : 0;
+      ?>
+      <div class="dist-row">
+        <div class="dist-lbl"><?php echo $i; ?></div>
+        <div class="dist-bar"><div class="dist-fill" style="width:<?php echo $pct; ?>%;"></div></div>
+        <div class="dist-n"><?php echo $summary['distribution'][$i]; ?></div>
+      </div>
+      <?php endfor; ?>
+
+      <!-- Keyword insights -->
+      <div class="kw-wrap">
+        <div class="kw-title">Customers liked this for</div>
+        <?php if(!empty($topKeywords)): ?>
+          <div class="kw-chips">
+            <?php foreach($topKeywords as $k => $v): ?>
+              <span class="kw-chip"><?php echo $k; ?></span>
             <?php endforeach; ?>
-        </div>
-        <div class="main-image-container">
-            <img id="mainImg" src="<?php echo htmlspecialchars($mainImg); ?>" class="main-image">
-        </div>
-    </div>
-
-    <!-- DETAILS -->
-    <div class="details-section">
-        <div class="breadcrumb">Home > <?php echo htmlspecialchars($p['category']); ?> > <?php echo htmlspecialchars($productName); ?></div>
-        
-        <?php if($isTrending): ?>
-            <div class="badge-trending">🔥 ON TRENDING IN <?php echo strtoupper($p['category']); ?></div>
+          </div>
+        <?php else: ?>
+          <div style="font-size:0.78rem;color:var(--muted);font-style:italic;">Awaiting more feedback…</div>
         <?php endif; ?>
-
-        <h1 class="product-title"><?php echo htmlspecialchars($productName); ?></h1>
-        
-        <div class="rating-header">
-            <div class="stars-avg"><?php echo $summary['averageRating']; ?> ★</div>
-            <div class="review-count-header"><?php echo $summary['totalCount']; ?> Ratings & <?php echo count($reviewsData); ?> Reviews</div>
+        <div class="dss-tip">
+          <strong>DSS Insight</strong>
+          Check verified buyer reviews for the most accurate sizing guidance.
         </div>
+      </div>
 
-        <div class="price-tag">
-            <?php if ($productDiscount > 0): ?>
-                ₹<?php echo number_format($discountedPrice); ?>
-                <span>₹<?php echo number_format($productPrice); ?></span>
-                <small style="color:#388e3c; font-size:1rem; margin-left:5px;"><?php echo $productDiscount; ?>% OFF</small>
-            <?php else: ?>
-                ₹<?php echo number_format($productPrice); ?>
-            <?php endif; ?>
-        </div>
-
-        <div style="color: #388e3c; font-weight: 700; margin-bottom: 20px;">
-            <?php echo ($p['stock'] > 10) ? 'Available in Stock' : 'Low Stock: Only ' . $p['stock'] . ' left!'; ?>
-        </div>
-
-        <div class="size-selection">
-            <div class="size-title">Select Size</div>
-            <div class="size-btns">
-                <?php 
-                $sizes = ['S', 'M', 'L', 'XL', 'XXL'];
-                foreach($sizes as $sh): ?>
-                    <div class="size-box" onclick="this.parentElement.querySelectorAll('.size-box').forEach(b => b.classList.remove('active')); this.classList.add('active');"><?php echo $sh; ?></div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-
-        <div class="action-btns">
-            <button onclick="handlePageAddToCart(true)" class="btn-buy">Buy Now</button>
-            <button onclick="handlePageAddToCart()" class="btn-cart">Add to Cart</button>
-        </div>
-        <div id="cartMsg" style="margin-top: 15px; color: #2874f0; font-weight: 600;"></div>
-
-        <div style="margin-top: 30px; line-height: 1.6; color: #212121;">
-            <p><strong>Description:</strong> <?php echo nl2br(htmlspecialchars($p['description'])); ?></p>
-        </div>
+      <!-- Review notice -->
+      <div class="rev-notice" style="margin-top:24px;">
+        <div class="rev-notice-icon">📦</div>
+        <div class="rev-notice-title">Want to review this?</div>
+        <div class="rev-notice-sub">Purchase &amp; rate from <strong>My Orders</strong> after delivery.</div>
+      </div>
     </div>
+
+    <!-- Review list -->
+    <div class="rev-list">
+      <?php if(empty($reviewsData)): ?>
+        <div style="padding:48px 0; text-align:center; color:var(--muted); font-size:0.85rem; font-style:italic;">
+          No reviews yet. Be the first to share your experience.
+        </div>
+      <?php else: ?>
+        <?php foreach($reviewsData as $idx => $r): ?>
+          <div class="rev-card" style="animation-delay:<?php echo $idx*0.06; ?>s;">
+            <div class="rev-card-top">
+              <div class="rev-score"><?php echo $r['rating']; ?> <i class="fa-solid fa-star" style="font-size:0.7em;"></i></div>
+              <div class="rev-headline">
+                <?php echo $r['rating']>=4 ? 'Highly Recommended' : ($r['rating']>=3 ? 'Good Product' : 'Average'); ?>
+              </div>
+            </div>
+            <div class="rev-text"><?php echo htmlspecialchars($r['reviewText'] ?? ''); ?></div>
+            <div class="rev-meta">
+              <span class="rev-name"><?php echo htmlspecialchars($r['userId']['name'] ?? 'Customer'); ?></span>
+              <?php if($r['verifiedBuyer']): ?>
+                <span class="rev-verified"><i class="fa-solid fa-circle-check"></i> Verified Buyer</span>
+              <?php endif; ?>
+              <span><?php echo date('M Y', strtotime($r['createdAt'])); ?></span>
+            </div>
+          </div>
+        <?php endforeach; ?>
+      <?php endif; ?>
+    </div>
+  </div>
 </div>
 
-<div class="product-container" style="display:block;">
-    <div class="dss-section">
-        <h2 style="font-size: 1.5rem; border-bottom: 1px solid #f0f0f0; padding-bottom: 20px; margin-bottom: 20px;">Ratings & Reviews</h2>
-        
-        <div class="dss-grid">
-            <!-- RATINGS DIST -->
-            <div class="rating-summary">
-                <div style="display:flex; align-items:center; gap:20px; margin-bottom:30px;">
-                    <div style="font-size: 3rem; font-weight: 700;"><?php echo $summary['averageRating']; ?>★</div>
-                    <div style="color:#878787;">
-                        <div style="font-weight:700; color:#212121;"><?php echo $summary['totalCount']; ?> Ratings &</div>
-                        <div><?php echo count($reviewsData); ?> Reviews</div>
-                    </div>
-                </div>
-                <?php 
-                for($i=5; $i>=1; $i--): 
-                    $pct = ($summary['totalCount'] > 0) ? ($summary['distribution'][$i] / $summary['totalCount']) * 100 : 0;
-                ?>
-                <div class="dist-row">
-                    <div style="width:30px;"><?php echo $i; ?>★</div>
-                    <div class="bar-bg"><div class="bar-fill" style="width: <?php echo $pct; ?>%;"></div></div>
-                    <div style="width:40px; text-align:right; color:#878787;"><?php echo $summary['distribution'][$i]; ?></div>
-                </div>
-                <?php endfor; ?>
-            </div>
+<!-- ══ COMPLETE THE LOOK ══ -->
+<?php if(!empty($lookProducts)): ?>
+<div class="look-wrap">
+  <div class="section-head">
+    <div class="section-title">Complete the Look</div>
+    <div class="section-sub">More from <?php echo ucfirst($p['category']); ?></div>
+  </div>
+  <div class="look-grid">
+    <?php foreach($lookProducts as $lp): ?>
+    <a href="product.php?id=<?php echo urlencode($lp['id']); ?>" class="look-card">
+      <div class="look-img">
+        <img src="<?php echo htmlspecialchars($lp['img']); ?>" alt="<?php echo htmlspecialchars($lp['name']); ?>" loading="lazy">
+        <div class="look-overlay"><div class="look-overlay-btn">Quick View</div></div>
+      </div>
+      <div class="look-name"><?php echo htmlspecialchars($lp['name']); ?></div>
+      <div class="look-price">
+        ₹<?php echo number_format($lp['disc']>0 ? $lp['price']*(1-$lp['disc']/100) : $lp['price']); ?>
+        <?php if($lp['disc']>0): ?>
+          <s>₹<?php echo number_format($lp['price']); ?></s>
+        <?php endif; ?>
+      </div>
+    </a>
+    <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
 
-            <!-- KEYWORD INSIGHTS -->
-            <div class="keyword-insights">
-                <div class="size-title">Customer Decision Indicators</div>
-                <p style="font-size: 0.85rem; color: #878787; margin-bottom: 15px;">Based on recent purchases and feedback:</p>
-                <?php if(empty($topKeywords)): ?>
-                    <p style="font-size: 0.9rem; font-style: italic;">Awaiting more customer feedback...</p>
-                <?php else: ?>
-                    <div style="margin-bottom: 10px; font-weight:600; font-size:0.9rem;">👍 Customers liked this for:</div>
-                    <?php foreach($topKeywords as $k => $count): ?>
-                        <span class="insight-tag"><?php echo $k; ?></span>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-                
-                <div style="margin-top: 20px; background:#fff9f0; padding:15px; border-radius:4px; border:1px solid #ffedcc;">
-                    <div style="font-size:0.85rem; font-weight:700; color:#ff8c00;">DSS TIP:</div>
-                    <p style="font-size:0.8rem; margin:5px 0 0 0;">Check "Verified Buyer" reviews for accurate sizing feedback.</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- REVIEW SUBMISSION INFO -->
-        <div class="review-form-container">
-            <div style="background: #fff9e6; padding: 20px; border-radius: 8px; border: 1px solid #ffd966; text-align: center;">
-                <div style="font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 8px;">📦 Want to review this product?</div>
-                <p style="font-size: 0.9rem; color: #666; margin: 0;">
-                    Purchase this product and you'll be able to rate it from <strong>My Orders</strong> after delivery!
-                </p>
-            </div>
-        </div>
-
-        <!-- LIST -->
-        <div class="review-list">
-            <?php if(empty($reviewsData)): ?>
-                <p style="color:#878787; text-align:center; padding:40px;">No reviews yet. Be the first to help others with your feedback!</p>
-            <?php else: ?>
-                <?php foreach($reviewsData as $r): ?>
-                    <div class="review-item">
-                        <div style="display:flex; align-items:center;">
-                            <span class="rev-rating-box"><?php echo $r['rating']; ?> ★</span>
-                            <span style="font-weight:700; font-size:0.95rem;"><?php echo ($r['rating'] >= 4) ? 'Highly Recommended' : ($r['rating'] >= 3 ? 'Good Product' : 'Average'); ?></span>
-                        </div>
-                        <div class="rev-text"><?php echo htmlspecialchars($r['reviewText'] ?? ''); ?></div>
-                        <div class="rev-meta">
-                            <span style="font-weight:700; color:#212121;"><?php echo htmlspecialchars($r['userId']['name'] ?? 'Generic User'); ?></span>
-                            <?php if($r['verifiedBuyer']): ?>
-                                <span class="verified-tag">✔ Verified Buyer</span>
-                            <?php endif; ?>
-                            <span><?php echo date('M, Y', strtotime($r['createdAt'])); ?></span>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </div>
-    </div>
+<!-- ══ RECENTLY VIEWED ══ -->
+<div class="recent-wrap" id="pdp-recently-viewed" style="display:none;">
+  <div class="section-head">
+    <div class="section-title">Recently Viewed</div>
+  </div>
+  <div class="recent-grid" id="pdp-recent-grid"></div>
 </div>
 
+<div class="end-gap"></div>
+
+<!-- ══ SCRIPTS ══ -->
 <script>
-    const product = {
-        id: "<?php echo $productId; ?>",
-        name: "<?php echo addslashes($productName); ?>",
-        price: <?php echo $productPrice; ?>,
-        discount_percentage: <?php echo $productDiscount; ?>,
-        img: "<?php echo addslashes($mainImg); ?>"
-    };
+const product = {
+  id: "<?php echo $productId; ?>",
+  name: "<?php echo addslashes($productName); ?>",
+  price: <?php echo $productPrice; ?>,
+  discount_percentage: <?php echo $productDiscount; ?>,
+  img: "<?php echo addslashes($mainImg); ?>"
+};
+window.IS_LOGGED_IN = <?php echo isLoggedIn() ? 'true' : 'false'; ?>;
+window.AUTH_TOKEN = '<?php echo getAuthToken(); ?>';
 
-    window.IS_LOGGED_IN = <?php echo isLoggedIn() ? 'true' : 'false'; ?>;
-    window.AUTH_TOKEN = '<?php echo getAuthToken(); ?>';
+function setMainImage(src, thumb) {
+  document.getElementById('mainImg').src = src;
+  document.querySelectorAll('.gallery-thumb').forEach(t => t.classList.remove('on'));
+  if(thumb) thumb.classList.add('on');
+}
 
-    function setMainImage(src) { document.getElementById('mainImg').src = src; }
+function selectSize(el) {
+  el.closest('.d-sizes').querySelectorAll('.d-size').forEach(s => s.classList.remove('on'));
+  el.classList.add('on');
+}
 
-    function handlePageAddToCart(go = false) {
-        if (!window.IS_LOGGED_IN) {
-            if (confirm("Please login or register to continue your purchase.")) {
-                window.location.href = 'login.php';
-            }
-            return;
-        }
-
-        if (typeof window.addToCart === 'function') {
-            window.addToCart(product.id, product.name, product.price, product.img, 1, product.discount_percentage);
-        } else {
-            // Fallback if global script not loaded
-            const cartKey = 'urbanwear_cart';
-            let cart = JSON.parse(localStorage.getItem(cartKey) || '[]');
-            const existing = cart.find(i => i.id === product.id);
-            if(existing) { existing.qty++; } else { cart.push({...product, qty: 1}); }
-            localStorage.setItem(cartKey, JSON.stringify(cart));
-            if(go) { window.location.href = 'cart.php'; }
-            else { document.getElementById('cartMsg').innerText = '✔ Added to cart successfully!'; }
-        }
+function handlePageAddToCart(go = false) {
+  if (!window.IS_LOGGED_IN) {
+    if (confirm("Please login or register to continue your purchase.")) {
+      window.location.href = 'login.php';
     }
+    return;
+  }
+  if (typeof window.addToCart === 'function') {
+    window.addToCart(product.id, product.name, product.price, product.img, 1, product.discount_percentage);
+  } else {
+    const cartKey = 'urbanwear_cart';
+    let cart = JSON.parse(localStorage.getItem(cartKey) || '[]');
+    const ex = cart.find(i => i.id === product.id);
+    if(ex) ex.qty++; else cart.push({...product, qty:1});
+    localStorage.setItem(cartKey, JSON.stringify(cart));
+    if(go) window.location.href = 'cart.php';
+    else { const m=document.getElementById('cartMsg'); m.textContent='✓ Added to bag'; setTimeout(()=>m.textContent='',3000); }
+  }
+}
 
+function toggleAcc(btn) {
+  const item = btn.closest('.acc-item');
+  const isOpen = item.classList.contains('open');
+  document.querySelectorAll('.acc-item').forEach(i => i.classList.remove('open'));
+  if(!isOpen) item.classList.add('open');
+}
 
+// Recently Viewed
+(function() {
+  const RV = 'uw_recently_viewed';
+  const cId    = '<?php echo $productId; ?>';
+  const cName  = '<?php echo addslashes($productName); ?>';
+  const cImg   = '<?php echo addslashes($mainImg); ?>';
+  const cPrice = <?php echo $productPrice; ?>;
+  const cDisc  = <?php echo $productDiscount; ?>;
+
+  let list = JSON.parse(localStorage.getItem(RV)||'[]');
+  list = list.filter(i => i.id !== cId);
+  list.unshift({id:cId,name:cName,img:cImg,price:cPrice,disc:cDisc,url:window.location.href});
+  if(list.length>8) list=list.slice(0,8);
+  localStorage.setItem(RV,JSON.stringify(list));
+
+  const others = list.filter(i => i.id !== cId).slice(0,4);
+  if(others.length===0) return;
+
+  const grid = document.getElementById('pdp-recent-grid');
+  const sec  = document.getElementById('pdp-recently-viewed');
+  others.forEach(item => {
+    const ep = item.disc>0 ? Math.round(item.price*(1-item.disc/100)) : item.price;
+    const a = document.createElement('a');
+    a.className = 'recent-card';
+    a.href = item.url || ('product.php?id='+item.id);
+    a.innerHTML = '<div class="recent-img"><img src="'+item.img+'" loading="lazy"></div>'
+      +'<div class="recent-name">'+item.name+'</div>'
+      +'<div class="recent-price">₹'+ep.toLocaleString('en-IN')+'</div>';
+    grid.appendChild(a);
+  });
+  sec.style.display='block';
+})();
+
+// Thumb highlight
+document.querySelectorAll('.gallery-thumb').forEach((t,i) => {
+  if(i===0) t.classList.add('on');
+});
 </script>
 
-  <script src="assets/js/cart.js"></script>
+<script src="assets/js/cart.js"></script>
+<script src="assets/js/search-autocomplete.js"></script>
+<link rel="stylesheet" href="css/urbanbot.css">
+<script src="assets/js/urbanbot.js"></script>
 </body>
 </html>

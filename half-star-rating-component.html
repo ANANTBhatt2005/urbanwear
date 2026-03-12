@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pure JS Half-Star Rating Component</title>
+    <style>
+        :root {
+            --star-size: 40px;
+            --star-color-active: #f59e0b; /* Amber/Gold */
+            --star-color-inactive: #e0e0e0; /* Light Gray */
+            --text-color: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f9f9f9;
+            margin: 0;
+        }
+
+        /* Component Container */
+        .rating-component {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        h3 {
+            margin-top: 0;
+            color: var(--text-color);
+        }
+
+        /* Stars Wrapper */
+        .stars-box {
+            display: inline-flex;
+            gap: 8px;
+            cursor: pointer;
+            margin: 20px 0;
+        }
+
+        /* Individual Star SVG */
+        .star-svg {
+            width: var(--star-size);
+            height: var(--star-size);
+            fill: var(--star-color-inactive);
+            transition: transform 0.1s ease;
+        }
+
+        .star-svg:hover {
+            transform: scale(1.1);
+        }
+
+        /* Visual States */
+        .star-svg.full {
+            fill: var(--star-color-active);
+        }
+
+        .star-svg.half {
+            /* CSS Gradient for Half Star */
+            fill: url(#half-gradient);
+        }
+
+        .rating-display {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-color);
+            min-height: 1.5em;
+        }
+
+        .btn-submit {
+            margin-top: 20px;
+            padding: 10px 24px;
+            background-color: var(--star-color-active);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-submit:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- SVG Definition for Half Star Gradient (Hidden) -->
+    <svg width="0" height="0" style="position: absolute;">
+        <defs>
+            <linearGradient id="half-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="50%" style="stop-color:var(--star-color-active);stop-opacity:1" />
+                <stop offset="50%" style="stop-color:var(--star-color-inactive);stop-opacity:1" />
+            </linearGradient>
+        </defs>
+    </svg>
+
+    <div class="rating-component">
+        <h3>Rate Your Order</h3>
+        
+        <div class="stars-box" id="starsBox">
+            <!-- Stars will be injected here or can be static -->
+            <!-- Using data-index for logic -->
+            <svg class="star-svg" viewBox="0 0 24 24" data-index="0"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            <svg class="star-svg" viewBox="0 0 24 24" data-index="1"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            <svg class="star-svg" viewBox="0 0 24 24" data-index="2"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            <svg class="star-svg" viewBox="0 0 24 24" data-index="3"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            <svg class="star-svg" viewBox="0 0 24 24" data-index="4"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+        </div>
+
+        <div class="rating-display">Rating: <span id="ratingValue">0</span></div>
+        <button class="btn-submit" onclick="alert('Rating Submitted: ' + currentRating)">Submit Review</button>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const starsBox = document.getElementById('starsBox');
+        const stars = starsBox.querySelectorAll('.star-svg');
+        const ratingValueDisplay = document.getElementById('ratingValue');
+        
+        let currentRating = 0; // Stored decimal value
+
+        // --- CORE LOGIC ---
+        
+        // 1. Render Visual State
+        function updateStars(value) {
+            stars.forEach((star, index) => {
+                star.classList.remove('full', 'half');
+                
+                if (value >= index + 1) {
+                    star.classList.add('full');
+                } else if (value >= index + 0.5) {
+                    star.classList.add('half');
+                }
+            });
+            ratingValueDisplay.textContent = value;
+        }
+
+        // 2. Handle Mouse Movement (Hover Preview)
+        starsBox.addEventListener('mousemove', (e) => {
+            // Find which star was hovered
+            // closest('svg') ensures we get the star element even if path is hovered
+            const star = e.target.closest('.star-svg'); 
+            if (!star) return;
+
+            const rect = star.getBoundingClientRect();
+            const width = rect.width;
+            const x = e.clientX - rect.left; // X position within the star
+            const index = parseInt(star.dataset.index);
+
+            // Logic: Left half (< 50%) vs Right half (>= 50%)
+            const isHalf = x < (width / 2);
+            const hoverRating = isHalf ? index + 0.5 : index + 1;
+
+            updateStars(hoverRating);
+        });
+
+        // 3. Handle Mouse Leave (Reset to saved rating)
+        starsBox.addEventListener('mouseleave', () => {
+            updateStars(currentRating);
+        });
+
+        // 4. Handle Click (Save Rating)
+        starsBox.addEventListener('click', (e) => {
+            const star = e.target.closest('.star-svg');
+            if (!star) return;
+
+            // Re-calculate exact position to ensure click matches hover visual
+            const rect = star.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const index = parseInt(star.dataset.index);
+            const isHalf = x < (rect.width / 2);
+
+            currentRating = isHalf ? index + 0.5 : index + 1;
+            
+            console.log("Selected Rating:", currentRating);
+            updateStars(currentRating);
+        });
+
+        // --- HELPER FUNCTION (Requested) ---
+        /**
+         * Calculates average rating rounded to nearest 0.5
+         * @param {number[]} ratingsArray - Array of numbers e.g. [4, 5, 3.5]
+         * @returns {number} - Average rounded to nearest 0.5
+         */
+        function calculateAverageRating(ratingsArray) {
+            if (!Array.isArray(ratingsArray) || ratingsArray.length === 0) return 0;
+            
+            const sum = ratingsArray.reduce((acc, val) => acc + val, 0);
+            const avg = sum / ratingsArray.length;
+            
+            // Round to nearest 0.5
+            // Logic: Multiply by 2, round to integer, divide by 2
+            return Math.round(avg * 2) / 2;
+        }
+
+        // Example Usage of Helper
+        console.log("Test Average [5, 4, 2]:", calculateAverageRating([5, 4, 2])); // Should be 3.5
+        console.log("Test Average [5, 5, 4]:", calculateAverageRating([5, 5, 4])); // Should be 4.5
+    </script>
+</body>
+</html>

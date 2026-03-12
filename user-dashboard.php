@@ -1,619 +1,992 @@
 <?php
-/**
- * PREMIUM USER DASHBOARD - Connected to Node.js Backend
- * 
- * Complete redesign for URBANWEAR brand.
- * Includes: Account Overview, My Orders, Address Management, Order Cancellation.
- */
-
 session_start();
 require_once 'api-helper.php';
-
-// Require login
 requireLogin();
-
-// Get user info from session
 $user = getCurrentUser();
 $token = getAuthToken();
-
-$orders = [];
-$addresses = [];
-$profile_error = '';
-$profile_success = '';
-
-// Fetch user data
+$orders = []; $addresses = []; $profile_error = ''; $profile_success = '';
 if ($token) {
-    // 0. Fetch Full Profile (for Member Since)
     $profileRes = $API->get('/api/v1/auth/me', $token);
-    if ($profileRes['success']) {
-        $user = $profileRes['data'];
-    }
-
-    // 1. Fetch Orders
+    if ($profileRes['success']) { $user = $profileRes['data']; }
     $orderResponse = $API->get('/api/v1/orders', $token);
-    if ($orderResponse['success']) {
-        $orders = $orderResponse['data'] ?? [];
-    }
-    
-    // 2. Fetch Addresses
-    $userResponse = $API->get('/api/v1/addresses', $token); // address.controller returns addresses array
-    if ($userResponse['success']) {
-        $addresses = $userResponse['data'] ?? [];
-    }
+    if ($orderResponse['success']) { $orders = $orderResponse['data'] ?? []; }
+    $userResponse = $API->get('/api/v1/addresses', $token);
+    if ($userResponse['success']) { $addresses = $userResponse['data'] ?? []; }
+    $wishlistRes = $API->get('/api/v1/wishlist/user', $token);
+    $wishlists = [];
+    if (isset($wishlistRes['success']) && $wishlistRes['success']) { $wishlists = $wishlistRes['data'] ?? []; }
 }
-
-// Handle Form Submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    
-    // --> Cancel Order
     if ($_POST['action'] === 'cancel_order') {
         $orderId = $_POST['order_id'];
         $resp = $API->put("/api/v1/orders/$orderId/cancel", [], $token);
-        if ($resp['success']) {
-            $profile_success = "Order #$orderId has been cancelled.";
-            // Refresh orders
-            $orderResponse = $API->get('/api/v1/orders', $token);
-            $orders = $orderResponse['data'] ?? [];
-        } else {
-            $profile_error = "Cancellation failed: " . ($resp['message'] ?? 'Error');
-        }
+        if ($resp['success']) { $profile_success = "Order cancelled."; $orderResponse = $API->get('/api/v1/orders/', $token); $orders = $orderResponse['data'] ?? []; }
+        else { $profile_error = "Failed: " . ($resp['message'] ?? 'Error'); }
     }
-
-    // --> Add/Edit Address
     if ($_POST['action'] === 'save_address') {
         $addrId = $_POST['address_id'] ?? null;
-        $payload = [
-            'name' => $_POST['name'] ?? '',
-            'phone' => $_POST['phone'] ?? '',
-            'street' => $_POST['street'] ?? '',
-            'city' => $_POST['city'] ?? '',
-            'state' => $_POST['state'] ?? '',
-            'zip' => $_POST['zip'] ?? '',
-            'country' => 'India'
-        ];
-        
-        if ($addrId) {
-            // Update
-            $resp = $API->put("/api/v1/addresses/$addrId", $payload, $token);
-            if ($resp['success']) {
-                $profile_success = "Address updated successfully.";
-                $addresses = $resp['data'] ?? [];
-            } else {
-                $profile_error = "Error updating address: " . $resp['message'];
-            }
-        } else {
-            // Add
-            $resp = $API->post('/api/v1/addresses', $payload, $token);
-            if ($resp['success']) {
-                $profile_success = "Address added successfully.";
-                $addresses = $resp['data'] ?? [];
-            } else {
-                $profile_error = "Error adding address: " . $resp['message'];
-            }
-        }
+        $payload = ['name'=>$_POST['name']??'','phone'=>$_POST['phone']??'','street'=>$_POST['street']??'','city'=>$_POST['city']??'','state'=>$_POST['state']??'','zip'=>$_POST['zip']??'','country'=>'India'];
+        if ($addrId) { $resp = $API->put("/api/v1/addresses/$addrId", $payload, $token); }
+        else { $resp = $API->post('/api/v1/addresses', $payload, $token); }
+        if ($resp['success']) { $profile_success = "Address saved."; $addresses = $resp['data'] ?? []; }
+        else { $profile_error = "Error: " . $resp['message']; }
     }
-
-    // --> Delete Address
     if ($_POST['action'] === 'delete_address') {
-        $addrId = $_POST['address_id'];
-        $resp = $API->delete("/api/v1/addresses/$addrId", $token);
-        if ($resp['success']) {
-            $profile_success = "Address deleted.";
-            $addresses = $resp['data'] ?? [];
-        } else {
-            $profile_error = "Error deleting address.";
-        }
+        $resp = $API->delete("/api/v1/addresses/{$_POST['address_id']}", $token);
+        if ($resp['success']) { $profile_success = "Deleted."; $addresses = $resp['data'] ?? []; }
+        else { $profile_error = "Error deleting."; }
     }
 }
-
-// Calculate Total Spent for Overview
 $totalSpent = 0;
-foreach($orders as $o) {
-    if(($o['orderStatus'] ?? '') !== 'CANCELLED') {
-        $totalSpent += ($o['totalAmount'] ?? 0);
-    }
-}
+foreach($orders as $o) { if(($o['orderStatus']??'')!=='CANCELLED') $totalSpent+=($o['totalAmount']??0); }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Account – URBANWEAR</title>
-    
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Premium Dashboard CSS -->
-    <link rel="stylesheet" href="css/premium-dashboard.css">
-    
-    <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>My Account — URBANWEAR</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=DM+Sans:opsz,wght@9..40,200;9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+/* ══════════════════════════════════════════
+   URBANWEAR — USER DASHBOARD
+   Net-A-Porter × MyTheresa × Farfetch
+   Pure white · Serif headlines · Editorial
+   ══════════════════════════════════════════ */
+:root {
+  --white:   #ffffff;
+  --off:     #faf9f7;
+  --bg:      #f5f3ef;
+  --border:  #e8e4de;
+  --border2: #d4cfc7;
+  --ink:     #1a1814;
+  --mid:     #6b6560;
+  --muted:   #a8a29a;
+  --accent:  #1a1814;
+  --gold:    #b8965a;
+  --grn:     #2d5a3d;
+  --red:     #9e3a2a;
+  --ease:    cubic-bezier(0.16,1,0.3,1);
+  --sw:      260px;
+}
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+html { height:100%; scroll-behavior:smooth; }
+body {
+  font-family:'DM Sans',sans-serif;
+  background:var(--white);
+  color:var(--ink);
+  min-height:100vh;
+  display:flex;
+  -webkit-font-smoothing:antialiased;
+}
+a { text-decoration:none; color:inherit; }
+button { font-family:'DM Sans',sans-serif; cursor:pointer; }
+::-webkit-scrollbar { width:3px; }
+::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+
+/* ══ SIDEBAR ══ */
+.sb {
+  width: var(--sw);
+  background: var(--white);
+  border-right: 1px solid var(--border);
+  position: sticky; top:0; height:100vh;
+  display: flex; flex-direction:column;
+  overflow-y: auto; flex-shrink:0;
+}
+
+.sb-top {
+  padding: 28px 28px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.sb-logo {
+  font-family:'Cormorant Garamond',serif;
+  font-size:1rem; font-weight:600;
+  letter-spacing:5px; text-transform:uppercase;
+  color:var(--ink); display:block; margin-bottom:2px;
+}
+.sb-logo-sub {
+  font-size:0.58rem; letter-spacing:0.3em;
+  text-transform:uppercase; color:var(--muted); font-weight:400;
+}
+
+/* Avatar block */
+.sb-user {
+  padding: 24px 28px;
+  border-bottom: 1px solid var(--border);
+}
+.sb-avatar-wrap {
+  display: flex; align-items:center; gap:14px;
+  margin-bottom: 14px;
+}
+.sb-avatar {
+  width: 44px; height:44px; border-radius:50%;
+  background: var(--ink);
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.1rem; font-weight:600; color:var(--white);
+  flex-shrink:0;
+}
+.sb-uname { font-size:0.9rem; font-weight:600; color:var(--ink); line-height:1.2; }
+.sb-uemail { font-size:0.68rem; color:var(--muted); margin-top:2px; font-weight:300; }
+.sb-member {
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:0.58rem; font-weight:600; letter-spacing:0.2em;
+  text-transform:uppercase; color:var(--grn);
+  background:rgba(45,90,61,0.07);
+  padding:4px 12px; border-radius:20px;
+}
+.sb-member::before {
+  content:''; width:5px; height:5px; border-radius:50%;
+  background:var(--grn); display:block;
+}
+
+/* Nav */
+.sb-nav { padding:18px 0; flex:1; }
+.sb-grp-lbl {
+  font-size:0.56rem; font-weight:700; letter-spacing:0.38em;
+  text-transform:uppercase; color:var(--muted);
+  padding:0 28px; margin:14px 0 4px; display:block;
+}
+.nl {
+  display:flex; align-items:center; gap:11px;
+  padding:10px 28px;
+  font-size:0.73rem; font-weight:400;
+  text-transform:uppercase; letter-spacing:0.1em;
+  color:var(--mid); cursor:pointer;
+  border-right:2px solid transparent;
+  transition:all 0.22s; user-select:none;
+}
+.nl i { font-size:0.76rem; width:15px; text-align:center; opacity:0.6; }
+.nl:hover { color:var(--ink); background:var(--off); }
+.nl.on { color:var(--ink); font-weight:600; border-right-color:var(--ink); background:var(--off); }
+.nl.on i { opacity:1; }
+.nl-badge {
+  margin-left:auto; font-size:0.58rem; font-weight:700;
+  background:var(--bg); color:var(--mid);
+  padding:2px 8px; border-radius:20px;
+  border:1px solid var(--border);
+}
+.sb-hr { height:1px; background:var(--border); margin:12px 28px; }
+.nl.exit { color:rgba(158,58,42,0.6); }
+.nl.exit:hover { color:var(--red); background:rgba(158,58,42,0.04); border-right-color:var(--red); }
+
+/* Bottom user info */
+.sb-bottom {
+  padding:16px 28px;
+  border-top:1px solid var(--border);
+  font-size:0.68rem; color:var(--muted); font-weight:300;
+  letter-spacing:0.04em;
+}
+
+/* ══ MAIN ══ */
+.main {
+  flex:1; min-height:100vh;
+  background:var(--off);
+  display:flex; flex-direction:column;
+}
+
+/* Top bar */
+.topbar {
+  height:54px; background:var(--white);
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 48px;
+  position:sticky; top:0; z-index:100;
+  flex-shrink:0;
+}
+.tb-crumb {
+  display:flex; align-items:center; gap:7px;
+  font-size:0.72rem; letter-spacing:0.06em;
+}
+.tb-crumb .seg { color:var(--muted); }
+.tb-crumb .sep { color:var(--border2); }
+.tb-crumb .cur { color:var(--ink); font-weight:600; }
+.tb-right {
+  display:flex; align-items:center; gap:12px;
+}
+.tb-shop {
+  display:flex; align-items:center; gap:7px;
+  font-size:0.68rem; font-weight:600; letter-spacing:0.15em;
+  text-transform:uppercase; color:var(--mid);
+  padding:7px 16px; border:1px solid var(--border);
+  transition:all 0.22s;
+}
+.tb-shop:hover { border-color:var(--ink); color:var(--ink); }
+
+/* Content */
+.content { padding:40px 48px 80px; flex:1; }
+
+/* ══ ALERTS ══ */
+.alert {
+  display:flex; align-items:center; gap:10px;
+  padding:12px 18px; margin-bottom:24px;
+  font-size:0.8rem; font-weight:500; border:1px solid;
+  border-radius:2px; animation:aIn 0.3s var(--ease);
+}
+@keyframes aIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+.ae { background:rgba(158,58,42,0.05); color:var(--red); border-color:rgba(158,58,42,0.2); }
+.ao { background:rgba(45,90,61,0.05); color:var(--grn); border-color:rgba(45,90,61,0.18); }
+
+/* ══ PANELS ══ */
+.panel { display:none; }
+.panel.on { display:block; animation:pIn 0.42s var(--ease); }
+@keyframes pIn { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+
+/* ══ PAGE HEADER ══ */
+.ph {
+  margin-bottom:36px;
+  padding-bottom:28px;
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-end; justify-content:space-between;
+}
+.ph-left {}
+.ph-eyebrow {
+  font-size:0.62rem; font-weight:600;
+  text-transform:uppercase; letter-spacing:0.35em;
+  color:var(--muted); margin-bottom:6px;
+}
+.ph-title {
+  font-family:'Cormorant Garamond',serif;
+  font-size:2.6rem; font-weight:400;
+  color:var(--ink); line-height:1; letter-spacing:-0.02em;
+}
+.ph-title em { font-style:italic; color:var(--gold); }
+.ph-sub {
+  font-size:0.78rem; font-weight:300;
+  color:var(--muted); margin-top:6px;
+  letter-spacing:0.04em;
+}
+.ph-action { flex-shrink:0; }
+
+/* ══ KPI STRIP ══ */
+.kpi-strip {
+  display:grid; grid-template-columns:repeat(3,1fr);
+  background:var(--white); border:1px solid var(--border);
+  margin-bottom:28px;
+}
+.kpi {
+  padding:26px 28px;
+  border-right:1px solid var(--border);
+  position:relative; transition:background 0.25s;
+}
+.kpi:last-child { border-right:none; }
+.kpi:hover { background:var(--off); }
+.kpi-lbl {
+  font-size:0.62rem; font-weight:600;
+  text-transform:uppercase; letter-spacing:0.22em;
+  color:var(--muted); margin-bottom:10px;
+}
+.kpi-val {
+  font-family:'Cormorant Garamond',serif;
+  font-size:2.4rem; font-weight:400;
+  color:var(--ink); line-height:1; letter-spacing:-0.02em;
+}
+.kpi-val.sm {
+  font-family:'DM Sans',sans-serif;
+  font-size:0.88rem; font-weight:500;
+  display:flex; align-items:center; gap:7px;
+  letter-spacing:0.02em;
+}
+.kpi-dot {
+  width:7px; height:7px; border-radius:50%;
+  background:var(--grn); flex-shrink:0;
+}
+.kpi-stripe {
+  position:absolute; top:0; left:0;
+  width:100%; height:2px;
+}
+.kpi:nth-child(1) .kpi-stripe { background:var(--gold); }
+.kpi:nth-child(2) .kpi-stripe { background:var(--ink); }
+.kpi:nth-child(3) .kpi-stripe { background:var(--grn); }
+
+/* ══ PROFILE INFO ══ */
+.prof-row {
+  display:grid; grid-template-columns:repeat(3,1fr);
+  background:var(--white); border:1px solid var(--border);
+  margin-bottom:32px;
+}
+.prof-cell {
+  padding:22px 26px;
+  border-right:1px solid var(--border);
+}
+.prof-cell:last-child { border-right:none; }
+.prof-lbl {
+  font-size:0.6rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.22em;
+  color:var(--muted); margin-bottom:8px;
+}
+.prof-val { font-size:0.92rem; font-weight:500; color:var(--ink); }
+
+/* ══ SECTION LABEL ══ */
+.sec-lbl {
+  display:flex; align-items:center; gap:12px;
+  font-size:0.62rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.25em;
+  color:var(--muted); margin:32px 0 16px;
+}
+.sec-lbl::after { content:''; flex:1; height:1px; background:var(--border); }
+
+/* ══ ORDER CARDS ══ */
+.o-list { display:flex; flex-direction:column; gap:8px; }
+.oc {
+  background:var(--white); border:1px solid var(--border);
+  display:flex; justify-content:space-between; align-items:center;
+  padding:20px 24px;
+  transition:all 0.28s var(--ease);
+  position:relative;
+}
+.oc::before {
+  content:''; position:absolute; left:0; top:0; bottom:0;
+  width:3px; background:var(--border);
+  transition:background 0.25s;
+}
+.oc:hover { box-shadow:0 4px 20px rgba(26,24,20,0.07); transform:translateX(2px); }
+.oc:hover::before { background:var(--gold); }
+.oc-id {
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.1rem; font-weight:500; color:var(--ink);
+  margin-bottom:4px;
+}
+.oc-meta {
+  font-size:0.72rem; color:var(--muted); font-weight:300;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.oc-meta strong { color:var(--ink); font-weight:600; }
+.oc-right { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+
+/* Status pills */
+.pill {
+  font-size:0.58rem; font-weight:700; letter-spacing:0.12em;
+  text-transform:uppercase; padding:4px 12px;
+  display:inline-block; white-space:nowrap;
+}
+.s-pending    { background:rgba(184,150,90,0.1);  color:var(--gold); border:1px solid rgba(184,150,90,0.25); }
+.s-processing { background:rgba(45,90,61,0.08);   color:var(--grn);  border:1px solid rgba(45,90,61,0.18); }
+.s-delivered  { background:rgba(45,90,61,0.1);    color:var(--grn);  border:1px solid rgba(45,90,61,0.2); }
+.s-cancelled  { background:rgba(158,58,42,0.07);  color:var(--red);  border:1px solid rgba(158,58,42,0.18); }
+.s-shipped    { background:rgba(26,24,20,0.06);   color:var(--ink);  border:1px solid rgba(26,24,20,0.12); }
+.s-placed     { background:rgba(184,150,90,0.1);  color:var(--gold); border:1px solid rgba(184,150,90,0.25); }
+.s-paid       { background:rgba(45,90,61,0.1);    color:var(--grn);  border:1px solid rgba(45,90,61,0.2); }
+.s-confirmed  { background:rgba(45,90,61,0.1);    color:var(--grn);  border:1px solid rgba(45,90,61,0.2); }
+
+/* ══ BUTTONS ══ */
+.btn {
+  display:inline-flex; align-items:center; gap:7px;
+  padding:9px 20px; border:none;
+  font-family:'DM Sans',sans-serif;
+  font-size:0.66rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.18em;
+  cursor:pointer; transition:all 0.25s var(--ease);
+  white-space:nowrap;
+}
+.btn-dark { background:var(--ink); color:var(--white); }
+.btn-dark:hover { background:#333; }
+.btn-out { background:var(--white); color:var(--ink); border:1px solid var(--border); }
+.btn-out:hover { border-color:var(--ink); }
+.btn-red { background:rgba(158,58,42,0.07); color:var(--red); border:1px solid rgba(158,58,42,0.2); }
+.btn-red:hover { background:var(--red); color:var(--white); }
+.btn-sm { padding:6px 14px; font-size:0.6rem; }
+
+/* ══ ADDRESS GRID ══ */
+.agrid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.acard {
+  background:var(--white); border:1px solid var(--border);
+  padding:24px 26px; transition:all 0.3s var(--ease);
+  position:relative;
+}
+.acard:hover { box-shadow:0 6px 24px rgba(26,24,20,0.07); border-color:var(--border2); }
+.acard-top-bar {
+  position:absolute; top:0; left:0; right:0; height:2px;
+  background:var(--border); transition:background 0.3s;
+}
+.acard:hover .acard-top-bar { background:var(--gold); }
+.acard-name {
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.15rem; font-weight:500; color:var(--ink);
+  margin-bottom:12px; padding-bottom:12px;
+  border-bottom:1px solid var(--border);
+}
+.acard-text {
+  font-size:0.8rem; color:var(--mid);
+  line-height:1.9; font-weight:300; margin-bottom:18px;
+}
+.acard-acts { display:flex; gap:8px; }
+
+.a-empty {
+  grid-column:1/-1; text-align:center;
+  padding:52px; border:1px dashed var(--border);
+  background:var(--white);
+}
+.a-empty p { color:var(--muted); font-size:0.85rem; font-weight:300; margin-bottom:16px; }
+
+/* Empty state */
+.empty-panel {
+  text-align:center; padding:80px 40px;
+  background:var(--white); border:1px solid var(--border);
+}
+.empty-panel i { font-size:2.5rem; color:var(--border2); margin-bottom:16px; display:block; }
+.empty-panel p { color:var(--muted); font-weight:300; margin-bottom:24px; font-size:0.88rem; }
+
+/* ══ MODALS ══ */
+.modal {
+  display:none; position:fixed; inset:0; z-index:9000;
+  background:rgba(26,24,20,0.5);
+  backdrop-filter:blur(10px);
+  align-items:center; justify-content:center; padding:20px;
+}
+.modal.on { display:flex; animation:mF 0.22s ease; }
+@keyframes mF { from{opacity:0} to{opacity:1} }
+.mbox {
+  background:var(--white); width:100%; max-width:480px;
+  max-height:92vh; overflow-y:auto;
+  border:1px solid var(--border);
+  box-shadow:0 32px 80px rgba(26,24,20,0.18);
+  animation:mU 0.35s var(--ease);
+}
+.mbox.wide { max-width:600px; }
+@keyframes mU { from{transform:translateY(16px);opacity:0} to{transform:translateY(0);opacity:1} }
+.mbox-head {
+  padding:22px 28px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  position:sticky; top:0; background:var(--white); z-index:1;
+}
+.mbox-head h3 {
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.5rem; font-weight:400; color:var(--ink);
+}
+.mbox-close {
+  width:30px; height:30px; display:flex; align-items:center; justify-content:center;
+  border:none; background:var(--bg); color:var(--mid);
+  cursor:pointer; font-size:1rem; transition:all 0.2s;
+}
+.mbox-close:hover { background:var(--border); color:var(--ink); }
+.mbox-body { padding:28px; }
+.mbox-foot {
+  padding:16px 28px; border-top:1px solid var(--border);
+  position:sticky; bottom:0; background:var(--white);
+}
+
+/* Form fields */
+.fg { margin-bottom:16px; }
+.fg label {
+  display:block; font-size:0.6rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.22em;
+  color:var(--mid); margin-bottom:7px;
+}
+.fi {
+  width:100%; padding:10px 14px;
+  background:var(--off); border:1px solid var(--border);
+  font-family:'DM Sans',sans-serif; font-size:0.87rem;
+  color:var(--ink); outline:none; transition:all 0.22s;
+}
+.fi:focus { border-color:var(--ink); background:var(--white); box-shadow:0 0 0 3px rgba(26,24,20,0.05); }
+.fr { display:flex; gap:12px; }
+textarea.fi { resize:vertical; min-height:80px; }
+
+/* Order detail */
+.od-row {
+  display:flex; justify-content:space-between; align-items:flex-start;
+  padding:16px 0; border-bottom:1px solid var(--border);
+}
+.od-row:last-child { border-bottom:none; }
+.od-name { font-size:0.88rem; font-weight:600; color:var(--ink); margin-bottom:4px; }
+.od-meta { font-size:0.72rem; color:var(--muted); font-weight:300; }
+.od-price {
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.15rem; font-weight:500; color:var(--ink); flex-shrink:0;
+}
+
+/* Address info in order */
+.od-addr {
+  background:var(--off); padding:16px 18px;
+  border:1px solid var(--border); margin-bottom:18px;
+}
+
+/* Review stars */
+.r-stars { display:flex; gap:6px; margin-top:8px; }
+.rstar { font-size:1.8rem; cursor:pointer; color:var(--border); transition:color 0.18s; line-height:1; }
+.rstar:hover, .rstar.on { color:var(--gold); }
+
+/* Responsive */
+@media(max-width:1100px) {
+  .content { padding:32px 28px 60px; }
+  .kpi-strip { grid-template-columns:1fr 1fr; }
+  .kpi:last-child { border-top:1px solid var(--border); }
+  .prof-row { grid-template-columns:1fr 1fr; }
+}
+@media(max-width:820px) {
+  body { flex-direction:column; }
+  .sb { width:100%; height:auto; position:static; border-right:none; border-bottom:1px solid var(--border); }
+  .sb-nav { display:flex; flex-wrap:wrap; padding:10px; }
+  .nl { border-right:none; border-bottom:2px solid transparent; }
+  .nl.on { border-right:none; border-bottom-color:var(--ink); }
+  .agrid { grid-template-columns:1fr; }
+  .prof-row { grid-template-columns:1fr; }
+  .prof-cell { border-right:none; border-bottom:1px solid var(--border); }
+  .kpi-strip { grid-template-columns:1fr; }
+  .kpi { border-right:none; border-bottom:1px solid var(--border); }
+  .oc { flex-direction:column; align-items:flex-start; gap:12px; }
+  .ph { flex-direction:column; gap:14px; }
+  .ph-title { font-size:2rem; }
+  .topbar { padding:0 20px; }
+  .content { padding:24px 18px 48px; }
+}
+</style>
 </head>
 <body>
 
-    <div class="dashboard-container">
-        
-        <!-- Sidebar -->
-        <aside class="dashboard-sidebar">
-            <div class="user-profile-summary">
-                <div class="user-avatar">
-                    <?php echo strtoupper(substr($user['name'], 0, 1)); ?>
-                </div>
-                <h3><?php echo htmlspecialchars($user['name']); ?></h3>
-                <p style="color:var(--text-muted); font-size:14px;"><?php echo htmlspecialchars($user['email']); ?></p>
-            </div>
-            
-            <nav class="nav-menu">
-                <div class="nav-item">
-                    <a class="nav-link active" onclick="switchSection('overview', this)">
-                        <i class="fa-solid fa-house"></i> Overview
-                    </a>
-                </div>
-                <div class="nav-item">
-                    <a class="nav-link" onclick="switchSection('orders', this)">
-                        <i class="fa-solid fa-bag-shopping"></i> My Orders
-                    </a>
-                </div>
-                <div class="nav-item">
-                    <a class="nav-link" onclick="switchSection('addresses', this)">
-                        <i class="fa-solid fa-location-dot"></i> Addresses
-                    </a>
-                </div>
-                <div class="nav-item" style="margin-top: 50px;">
-                    <a href="index.php" class="nav-link">
-                        <i class="fa-solid fa-arrow-left"></i> Back to Shop
-                    </a>
-                    <a href="logout-connected.php" class="nav-link" style="color: var(--brand-danger);">
-                        <i class="fa-solid fa-right-from-bracket"></i> Logout
-                    </a>
-                </div>
-            </nav>
-        </aside>
+<!-- ══ SIDEBAR ══ -->
+<aside class="sb">
+  <div class="sb-top">
+    <a href="index.php" class="sb-logo">Urbanwear</a>
+    <span class="sb-logo-sub">My Account</span>
+  </div>
 
-        <!-- Main Content -->
-        <main class="dashboard-main">
-            
-            <!-- Global Alerts -->
-            <?php if ($profile_error): ?>
-                <div style="background: #fee2e2; color: #b91c1c; padding: 15px; border-radius: 12px; margin-bottom: 25px; display: flex; align-items: center; gap: 10px;">
-                    <i class="fa-solid fa-circle-exclamation"></i> <?php echo htmlspecialchars($profile_error); ?>
-                </div>
-            <?php endif; ?>
-            <?php if ($profile_success): ?>
-                <div style="background: #dcfce7; color: #15803d; padding: 15px; border-radius: 12px; margin-bottom: 25px; display: flex; align-items: center; gap: 10px;">
-                    <i class="fa-solid fa-circle-check"></i> <?php echo htmlspecialchars($profile_success); ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- OVERVIEW SECTION -->
-            <section id="overview" class="dashboard-content active">
-                <div class="section-header">
-                    <h2 class="section-title">Account Overview</h2>
-                </div>
-                
-                <div class="overview-grid">
-                    <div class="stat-card">
-                        <div class="stat-label">Total Spent</div>
-                        <div class="stat-value">₹<?php echo number_format($totalSpent); ?></div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Orders Placed</div>
-                        <div class="stat-value"><?php echo count($orders); ?></div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Member Status</div>
-                        <div class="stat-value" style="color:var(--brand-success); font-size: 20px;">✓ Active Citizen</div>
-                    </div>
-                </div>
-
-                <div class="stat-card" style="margin-bottom: 30px;">
-                    <h4 style="margin-bottom: 15px;">Profile Details</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                        <div>
-                            <p class="stat-label">Full Name</p>
-                            <p style="font-weight:600;"><?php echo htmlspecialchars($user['name']); ?></p>
-                        </div>
-                        <div>
-                            <p class="stat-label">Email Address</p>
-                            <p style="font-weight:600;"><?php echo htmlspecialchars($user['email']); ?></p>
-                        </div>
-                        <div>
-                            <p class="stat-label">Member Since</p>
-                            <p style="font-weight:600;"><?php echo date('F d, Y', strtotime($user['createdAt'] ?? 'now')); ?></p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Recent Order Mini-List -->
-                <div class="section-header">
-                    <h3 style="font-size: 18px;">Recent Order</h3>
-                    <a onclick="switchSection('orders', document.querySelector('.nav-link[onclick*=\"orders\"]'))" style="font-size: 14px; color: var(--brand-accent); cursor:pointer;">See all</a>
-                </div>
-                <?php if(!empty($orders)): $o = $orders[0]; ?>
-                    <div class="order-card">
-                        <div class="order-info">
-                            <h4>Order #<?php echo substr($o['_id'], -6); ?></h4>
-                            <p class="order-meta"><?php echo date('M d, Y', strtotime($o['createdAt'])); ?> • ₹<?php echo number_format($o['totalAmount']); ?></p>
-                        </div>
-                        <div class="order-actions" style="display:flex; align-items:center; gap:15px;">
-                            <span class="order-status status-<?php echo strtolower($o['orderStatus']); ?>"><?php echo $o['orderStatus']; ?></span>
-                            <button class="btn btn-outline btn-sm" onclick="viewOrderDetails('<?php echo $o['_id']; ?>')">Details</button>
-                        </div>
-                    </div>
-                <?php else: ?>
-                    <p style="color:var(--text-muted);">No orders yet.</p>
-                <?php endif; ?>
-            </section>
-
-            <!-- ORDERS SECTION -->
-            <section id="orders" class="dashboard-content">
-                <div class="section-header">
-                    <h2 class="section-title">My Orders</h2>
-                </div>
-                
-                <div class="order-list">
-                    <?php if(empty($orders)): ?>
-                        <div style="text-align:center; padding: 60px 0;">
-                            <i class="fa-solid fa-box-open" style="font-size: 48px; color: #ddd; margin-bottom: 20px;"></i>
-                            <p style="color:var(--text-muted);">You haven't placed any orders yet.</p>
-                            <a href="index.php" class="btn btn-primary" style="margin-top: 20px;">Start Shopping</a>
-                        </div>
-                    <?php else: ?>
-                        <?php foreach($orders as $o): 
-                            $status = $o['orderStatus'] ?? 'Placed';
-                            $canCancel = in_array($status, ['Placed', 'Processing', 'CONFIRMED', 'Pending']);
-                        ?>
-                            <div class="order-card">
-                                <div class="order-info">
-                                    <h4>Order #<?php echo substr($o['_id'], -8); ?></h4>
-                                    <p class="order-meta">
-                                        <?php echo date('D, M d, Y', strtotime($o['createdAt'])); ?> • 
-                                        <span style="font-weight:700; color:var(--brand-black);">₹<?php echo number_format($o['totalAmount']); ?></span>
-                                    </p>
-                                    <p class="order-meta" style="margin-top:5px; font-size:12px;">Payment: <?php echo $o['paymentMethod'] ?? 'COD'; ?> (<?php echo $o['paymentStatus'] ?? 'Pending'; ?>)</p>
-                                </div>
-                                <div class="order-actions" style="display:flex; align-items:center; gap:12px;">
-                                    <span class="order-status status-<?php echo strtolower($status); ?>"><?php echo $status; ?></span>
-                                    <button class="btn btn-outline" onclick="viewOrderDetails('<?php echo $o['_id']; ?>')">View details</button>
-                                    <?php if($canCancel): ?>
-                                        <form method="POST" onsubmit="return confirm('Cancel this order?');" style="margin:0;">
-                                            <input type="hidden" name="action" value="cancel_order">
-                                            <input type="hidden" name="order_id" value="<?php echo $o['_id']; ?>">
-                                            <button type="submit" class="btn btn-danger">Cancel</button>
-                                        </form>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
-            </section>
-
-            <!-- ADDRESSES SECTION -->
-            <section id="addresses" class="dashboard-content">
-                <div class="section-header">
-                    <h2 class="section-title">Saved Addresses</h2>
-                    <button class="btn btn-primary" onclick="openAddressModal()">+ Add New</button>
-                </div>
-                
-                <div class="address-grid">
-                    <?php foreach($addresses as $addr): ?>
-                        <div class="address-card">
-                            <div class="address-name"><?php echo htmlspecialchars($addr['name'] ?? $user['name']); ?></div>
-                            <div class="address-details">
-                                <?php echo htmlspecialchars($addr['street']); ?><br>
-                                <?php echo htmlspecialchars($addr['city'] . ', ' . $addr['state'] . ' - ' . $addr['zip']); ?><br>
-                                Phone: <?php echo htmlspecialchars($addr['phone']); ?>
-                            </div>
-                            <div class="address-actions">
-                                <button class="btn btn-outline btn-sm" onclick='editAddress(<?php echo json_encode($addr); ?>)'>Edit</button>
-                                <form method="POST" onsubmit="return confirm('Delete this address?');" style="margin:0;">
-                                    <input type="hidden" name="action" value="delete_address">
-                                    <input type="hidden" name="address_id" value="<?php echo $addr['_id']; ?>">
-                                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                                </form>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                    
-                    <?php if(empty($addresses)): ?>
-                        <div style="grid-column: 1/-1; text-align:center; padding: 40px; border: 2px dashed #eee; border-radius: 16px;">
-                            <p style="color:var(--text-muted);">No addresses saved yet.</p>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </section>
-
-        </main>
+  <div class="sb-user">
+    <div class="sb-avatar-wrap">
+      <div class="sb-avatar"><?php echo strtoupper(substr($user['name']??'U',0,1)); ?></div>
+      <div>
+        <div class="sb-uname"><?php echo htmlspecialchars($user['name']??''); ?></div>
+        <div class="sb-uemail"><?php echo htmlspecialchars($user['email']??''); ?></div>
+      </div>
     </div>
+    <div class="sb-member">Active Member</div>
+  </div>
 
-    <!-- ADDRESS MODAL -->
-    <div id="addressModal" class="modal">
-        <div class="modal-content">
-            <span class="close-modal" onclick="closeModal('addressModal')">&times;</span>
-            <h3 id="addrModalTitle" style="margin-bottom:20px;">Add New Address</h3>
-            <form id="addressForm" method="POST">
-                <input type="hidden" name="action" value="save_address">
-                <input type="hidden" name="address_id" id="addr_id">
-                
-                <div class="form-group">
-                    <label class="form-label">Full Name</label>
-                    <input type="text" name="name" id="addr_name" class="form-input" required>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Mobile Number</label>
-                    <input type="text" name="phone" id="addr_phone" class="form-input" required>
-                </div>
+  <nav class="sb-nav">
+    <span class="sb-grp-lbl">Dashboard</span>
+    <a class="nl on" onclick="go('overview',this)">
+      <i class="fa-solid fa-grid-2"></i> Overview
+      <span class="nl-badge"><?php echo count($orders); ?></span>
+    </a>
+    <a class="nl" onclick="go('orders',this)">
+      <i class="fa-solid fa-bag-shopping"></i> My Orders
+      <span class="nl-badge"><?php echo count($orders); ?></span>
+    </a>
+    <a class="nl" onclick="go('addresses',this)">
+      <i class="fa-solid fa-location-dot"></i> Addresses
+      <span class="nl-badge"><?php echo count($addresses); ?></span>
+    </a>
+    <div class="sb-hr"></div>
+    <span class="sb-grp-lbl">More</span>
+    <a href="index.php" class="nl"><i class="fa-solid fa-arrow-left"></i> Back to Shop</a>
+    <a href="logout-connected.php" class="nl exit"><i class="fa-solid fa-right-from-bracket"></i> Sign Out</a>
+  </nav>
 
-                <div class="form-group">
-                    <label class="form-label">Street Address</label>
-                    <input type="text" name="street" id="addr_street" class="form-input" required>
-                </div>
+  <div class="sb-bottom">
+    Member since <?php echo date('Y', strtotime($user['createdAt']??'now')); ?>
+  </div>
+</aside>
 
-                <div class="form-row">
-                    <div class="form-group" style="flex:1;">
-                        <label class="form-label">City</label>
-                        <input type="text" name="city" id="addr_city" class="form-input" required>
-                    </div>
-                    <div class="form-group" style="flex:1;">
-                        <label class="form-label">State</label>
-                        <input type="text" name="state" id="addr_state" class="form-input" required>
-                    </div>
-                </div>
+<!-- ══ MAIN ══ -->
+<div class="main">
 
-                <div class="form-group">
-                    <label class="form-label">Pincode</label>
-                    <input type="text" name="zip" id="addr_zip" class="form-input" required>
-                </div>
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="tb-crumb">
+      <span class="seg">Account</span>
+      <span class="sep">/</span>
+      <span class="cur" id="crumbCur">Overview</span>
+    </div>
+    <div class="tb-right">
+      <a href="index.php" class="tb-shop"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.7rem;"></i> Continue Shopping</a>
+    </div>
+  </div>
 
-                <button type="submit" class="btn btn-primary" style="width:100%;">Save Address</button>
-            </form>
+  <!-- Content -->
+  <div class="content">
+
+    <?php if($profile_error): ?>
+      <div class="alert ae"><i class="fa-solid fa-circle-exclamation"></i> <?php echo htmlspecialchars($profile_error); ?></div>
+    <?php endif; ?>
+    <?php if($profile_success): ?>
+      <div class="alert ao"><i class="fa-solid fa-circle-check"></i> <?php echo htmlspecialchars($profile_success); ?></div>
+    <?php endif; ?>
+
+    <!-- ═══ OVERVIEW ═══ -->
+    <section id="overview" class="panel on">
+
+      <div class="ph">
+        <div class="ph-left">
+          <div class="ph-eyebrow">Welcome back, <?php echo htmlspecialchars(explode(' ',$user['name']??'')[0]); ?></div>
+          <h1 class="ph-title">Account <em>Overview</em></h1>
+          <p class="ph-sub">Your orders, addresses and activity at a glance.</p>
         </div>
-    </div>
+      </div>
 
-    <!-- ORDER DETAILS MODAL -->
-    <div id="orderModal" class="modal">
-        <div class="modal-content" style="max-width: 600px;">
-            <span class="close-modal" onclick="closeModal('orderModal')">&times;</span>
-            <h3>Order Details</h3>
-            <div id="orderDetailsContent" style="margin-top:20px;">
-                <!-- Filled by JS -->
-                <p>Loading...</p>
-            </div>
+      <!-- KPIs -->
+      <div class="kpi-strip">
+        <div class="kpi">
+          <div class="kpi-stripe"></div>
+          <div class="kpi-lbl">Total Spent</div>
+          <div class="kpi-val">₹<?php echo number_format($totalSpent); ?></div>
         </div>
-    </div>
-
-    <!-- REVIEW MODAL -->
-    <div id="reviewModal" class="modal">
-        <div class="modal-content" style="max-width: 500px;">
-            <span class="close-modal" onclick="closeModal('reviewModal')">&times;</span>
-            <h3>⭐ Rate this Product</h3>
-            <div id="reviewFormContent" style="margin-top:20px;">
-                <input type="hidden" id="review_product_id">
-                <input type="hidden" id="review_order_id">
-                
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-weight: 600; margin-bottom: 10px;">Your Rating</label>
-                    <div class="stars-selector" id="reviewStarSelector" style="display: flex; gap: 8px; font-size: 32px;">
-                        <span class="review-star" data-rating="1" onclick="selectRating(1)">☆</span>
-                        <span class="review-star" data-rating="2" onclick="selectRating(2)">☆</span>
-                        <span class="review-star" data-rating="3" onclick="selectRating(3)">☆</span>
-                        <span class="review-star" data-rating="4" onclick="selectRating(4)">☆</span>
-                        <span class="review-star" data-rating="5" onclick="selectRating(5)">☆</span>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Your Review (Optional)</label>
-                    <textarea id="review_text" class="form-input" rows="4" placeholder="Share your experience with this product..."></textarea>
-                </div>
-
-                <button onclick="submitProductReview()" id="submitReviewBtn" class="btn btn-primary" style="width:100%;">Submit Review</button>
-                <div id="reviewMessage" style="margin-top: 10px; font-size: 14px;"></div>
-            </div>
+        <div class="kpi">
+          <div class="kpi-stripe"></div>
+          <div class="kpi-lbl">Orders Placed</div>
+          <div class="kpi-val"><?php echo count($orders); ?></div>
         </div>
+        <div class="kpi">
+          <div class="kpi-stripe"></div>
+          <div class="kpi-lbl">Membership</div>
+          <div class="kpi-val sm"><span class="kpi-dot"></span> Active</div>
+        </div>
+      </div>
+
+      <!-- Profile info -->
+      <div class="prof-row">
+        <div class="prof-cell">
+          <div class="prof-lbl">Full Name</div>
+          <div class="prof-val"><?php echo htmlspecialchars($user['name']??'—'); ?></div>
+        </div>
+        <div class="prof-cell">
+          <div class="prof-lbl">Email Address</div>
+          <div class="prof-val"><?php echo htmlspecialchars($user['email']??'—'); ?></div>
+        </div>
+        <div class="prof-cell">
+          <div class="prof-lbl">Member Since</div>
+          <div class="prof-val"><?php echo date('M d, Y',strtotime($user['createdAt']??'now')); ?></div>
+        </div>
+      </div>
+
+      <!-- Recent order -->
+      <div class="sec-lbl">Recent Order</div>
+      <?php if(!empty($orders)): $o=$orders[0]; $st=strtolower($o['orderStatus']??'placed'); ?>
+        <div class="oc">
+          <div>
+            <div class="oc-id">Order #<?php echo substr($o['_id'],-8); ?></div>
+            <div class="oc-meta">
+              <span><?php echo date('M d, Y',strtotime($o['createdAt'])); ?></span>
+              <span>·</span>
+              <strong>₹<?php echo number_format($o['totalAmount']); ?></strong>
+              <span>·</span>
+              <span><?php echo $o['paymentMethod']??'COD'; ?></span>
+            </div>
+          </div>
+          <div class="oc-right">
+            <span class="pill s-<?php echo $st; ?>"><?php echo $o['orderStatus']; ?></span>
+            <button class="btn btn-out btn-sm" onclick="viewOrder('<?php echo $o['_id']; ?>')">View Details</button>
+          </div>
+        </div>
+      <?php else: ?>
+        <div style="color:var(--muted);font-size:0.85rem;font-weight:300;padding:24px;background:var(--white);border:1px solid var(--border);">No orders placed yet.</div>
+      <?php endif; ?>
+
+      <!-- Recent Wishlist -->
+      <div class="sec-lbl" style="margin-top:40px; display:flex; justify-content:space-between; align-items:center;">
+        <span>My Wishlist</span>
+        <a href="wishlist.php" style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--mid);">View All <i class="fa-solid fa-arrow-right"></i></a>
+      </div>
+      <?php if(!empty($wishlists)): ?>
+        <div style="display:flex; gap:16px; overflow-x:auto; padding-bottom:10px;">
+          <?php 
+          $preview_wishlists = array_slice($wishlists, 0, 4);
+          foreach($preview_wishlists as $w): 
+            $w_price = isset($w['price']) ? number_format($w['price']) : 0;
+            $w_img = (is_array($w['images']) && count($w['images'])) ? $w['images'][0] : 'https://via.placeholder.com/150';
+          ?>
+            <a href="product.php?id=<?php echo urlencode($w['productId']); ?>" style="flex: 0 0 calc(25% - 12px); border:1px solid var(--border); background:var(--white); display:block; padding:8px; text-decoration:none;">
+              <div style="aspect-ratio:3/4; overflow:hidden; margin-bottom:10px; background:var(--bg);">
+                <img src="<?php echo htmlspecialchars($w_img); ?>" alt="Wishlist Item" style="width:100%; height:100%; object-fit:cover;">
+              </div>
+              <div style="font-size:0.75rem; color:var(--ink); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><?php echo htmlspecialchars($w['title'] ?? 'Product'); ?></div>
+              <div style="font-size:0.85rem; color:var(--mid); font-family:'Cormorant Garamond', serif; font-weight:600;">₹<?php echo $w_price; ?></div>
+            </a>
+          <?php endforeach; ?>
+        </div>
+      <?php else: ?>
+        <div style="color:var(--muted);font-size:0.85rem;font-weight:300;padding:24px;background:var(--white);border:1px solid var(--border); text-align:center;">
+          <i class="fa-regular fa-heart" style="font-size:1.4rem; color:var(--border2); margin-bottom:12px; display:block;"></i>
+          ❤️ Your wishlist is empty<br><br>
+          <a href="index.php" class="btn btn-dark btn-sm">Explore Products</a>
+        </div>
+      <?php endif; ?>
+
+    </section>
+
+    <!-- ═══ ORDERS ═══ -->
+    <section id="orders" class="panel">
+      <div class="ph">
+        <div class="ph-left">
+          <div class="ph-eyebrow">Purchase History</div>
+          <h1 class="ph-title">My <em>Orders</em></h1>
+          <p class="ph-sub"><?php echo count($orders); ?> orders placed · ₹<?php echo number_format($totalSpent); ?> total spent</p>
+        </div>
+      </div>
+
+      <?php if(empty($orders)): ?>
+        <div class="empty-panel">
+          <i class="fa-solid fa-box-open"></i>
+          <p>No orders placed yet. Start browsing!</p>
+          <a href="index.php" class="btn btn-dark">Shop Now</a>
+        </div>
+      <?php else: ?>
+        <div class="o-list">
+          <?php foreach($orders as $o):
+            $st  = $o['orderStatus'] ?? 'Placed';
+            $stl = strtolower($st);
+            $canCancel = in_array($st,['Pending','Processing']);
+          ?>
+          <div class="oc">
+            <div>
+              <div class="oc-id">Order #<?php echo substr($o['_id'],-8); ?></div>
+              <div class="oc-meta">
+                <span><?php echo date('D, M d Y', strtotime($o['createdAt'])); ?></span>
+                <span>·</span>
+                <strong>₹<?php echo number_format($o['totalAmount']); ?></strong>
+                <span>·</span>
+                <span><?php echo $o['paymentMethod']??'COD'; ?></span>
+              </div>
+            </div>
+            <div class="oc-right">
+              <span class="pill s-<?php echo $stl; ?>"><?php echo $st; ?></span>
+              <button class="btn btn-out btn-sm" onclick="viewOrder('<?php echo $o['_id']; ?>')">Details</button>
+              <?php if($canCancel): ?>
+                <form method="POST" onsubmit="return confirm('Cancel this order?');" style="margin:0;">
+                  <input type="hidden" name="action" value="cancel_order">
+                  <input type="hidden" name="order_id" value="<?php echo $o['_id']; ?>">
+                  <button type="submit" class="btn btn-red btn-sm">Cancel</button>
+                </form>
+              <?php endif; ?>
+            </div>
+          </div>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+    </section>
+
+    <!-- ═══ ADDRESSES ═══ -->
+    <section id="addresses" class="panel">
+      <div class="ph">
+        <div class="ph-left">
+          <div class="ph-eyebrow">Saved Locations</div>
+          <h1 class="ph-title">My <em>Addresses</em></h1>
+          <p class="ph-sub">Faster checkout, every time.</p>
+        </div>
+        <div class="ph-action">
+          <button class="btn btn-dark" onclick="openAddr()"><i class="fa-solid fa-plus"></i> Add New</button>
+        </div>
+      </div>
+
+      <div class="agrid">
+        <?php foreach($addresses as $addr): ?>
+          <div class="acard">
+            <div class="acard-top-bar"></div>
+            <div class="acard-name"><?php echo htmlspecialchars($addr['name']??$user['name']); ?></div>
+            <div class="acard-text">
+              <?php echo htmlspecialchars($addr['street']); ?><br>
+              <?php echo htmlspecialchars($addr['city'].', '.$addr['state'].' — '.$addr['zip']); ?><br>
+              <span style="color:var(--muted);">+91 <?php echo htmlspecialchars($addr['phone']); ?></span>
+            </div>
+            <div class="acard-acts">
+              <button class="btn btn-out btn-sm" onclick='editAddr(<?php echo json_encode($addr); ?>)'>Edit</button>
+              <form method="POST" onsubmit="return confirm('Delete this address?');" style="margin:0;">
+                <input type="hidden" name="action" value="delete_address">
+                <input type="hidden" name="address_id" value="<?php echo $addr['_id']; ?>">
+                <button type="submit" class="btn btn-red btn-sm">Delete</button>
+              </form>
+            </div>
+          </div>
+        <?php endforeach; ?>
+        <?php if(empty($addresses)): ?>
+          <div class="a-empty">
+            <p>No saved addresses. Add one for faster checkout!</p>
+            <button class="btn btn-dark btn-sm" onclick="openAddr()"><i class="fa-solid fa-plus"></i> Add Address</button>
+          </div>
+        <?php endif; ?>
+      </div>
+    </section>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- ══ ADDRESS MODAL ══ -->
+<div id="mAddr" class="modal">
+  <div class="mbox">
+    <div class="mbox-head">
+      <h3 id="addrT">Add Address</h3>
+      <button class="mbox-close" onclick="closeM('mAddr')">✕</button>
     </div>
+    <div class="mbox-body">
+      <form method="POST" id="addrForm">
+        <input type="hidden" name="action" value="save_address">
+        <input type="hidden" name="address_id" id="a_id">
+        <div class="fg"><label>Full Name</label><input type="text" name="name" id="a_name" class="fi" required placeholder="Your name"></div>
+        <div class="fg"><label>Mobile Number</label><input type="text" name="phone" id="a_phone" class="fi" required placeholder="+91 00000 00000"></div>
+        <div class="fg"><label>Street Address</label><input type="text" name="street" id="a_street" class="fi" required placeholder="House no., street, area"></div>
+        <div class="fr">
+          <div class="fg" style="flex:1;"><label>City</label><input type="text" name="city" id="a_city" class="fi" required placeholder="City"></div>
+          <div class="fg" style="flex:1;"><label>State</label><input type="text" name="state" id="a_state" class="fi" required placeholder="State"></div>
+        </div>
+        <div class="fg"><label>Pincode</label><input type="text" name="zip" id="a_zip" class="fi" required placeholder="000 000"></div>
+      </form>
+    </div>
+    <div class="mbox-foot">
+      <button class="btn btn-out btn-sm" onclick="closeM('mAddr')" style="margin-right:8px;">Cancel</button>
+      <button class="btn btn-dark" onclick="document.getElementById('addrForm').submit()"><i class="fa-solid fa-check"></i> Save Address</button>
+    </div>
+  </div>
+</div>
 
-    <style>
-    .review-star {
-        cursor: pointer;
-        color: #ddd;
-        transition: color 0.2s;
-    }
-    .review-star:hover,
-    .review-star.active {
-        color: #ffc107;
-    }
-    </style>
+<!-- ══ ORDER DETAIL MODAL ══ -->
+<div id="mOrder" class="modal">
+  <div class="mbox wide">
+    <div class="mbox-head">
+      <h3>Order Details</h3>
+      <button class="mbox-close" onclick="closeM('mOrder')">✕</button>
+    </div>
+    <div class="mbox-body" id="oContent">
+      <p style="color:var(--muted);font-size:0.85rem;">Loading…</p>
+    </div>
+  </div>
+</div>
 
-    <script>
-        // Section Switching
-        function switchSection(id, element) {
-            document.querySelectorAll('.dashboard-content').forEach(s => s.classList.remove('active'));
-            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-            
-            document.getElementById(id).classList.add('active');
-            if(element) element.classList.add('active');
-        }
+<!-- ══ REVIEW MODAL ══ -->
+<div id="mReview" class="modal">
+  <div class="mbox">
+    <div class="mbox-head">
+      <h3>Rate Product</h3>
+      <button class="mbox-close" onclick="closeM('mReview')">✕</button>
+    </div>
+    <div class="mbox-body">
+      <input type="hidden" id="r_pid">
+      <input type="hidden" id="r_oid">
+      <div class="fg">
+        <label>Your Rating</label>
+        <div class="r-stars">
+          <span class="rstar" onclick="setR(1)">★</span>
+          <span class="rstar" onclick="setR(2)">★</span>
+          <span class="rstar" onclick="setR(3)">★</span>
+          <span class="rstar" onclick="setR(4)">★</span>
+          <span class="rstar" onclick="setR(5)">★</span>
+        </div>
+      </div>
+      <div class="fg">
+        <label>Review (Optional)</label>
+        <textarea id="r_txt" class="fi" placeholder="Share your experience with this product…"></textarea>
+      </div>
+    </div>
+    <div class="mbox-foot">
+      <button class="btn btn-out btn-sm" onclick="closeM('mReview')" style="margin-right:8px;">Cancel</button>
+      <button class="btn btn-dark" onclick="submitReview()"><i class="fa-solid fa-star"></i> Submit Review</button>
+      <div id="r_msg" style="margin-top:10px;font-size:0.75rem;color:var(--muted);"></div>
+    </div>
+  </div>
+</div>
 
-        // Modal Controls
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
-        }
+<script>
+const ordersData = <?php echo json_encode($orders); ?>;
+const crumbLabels = { overview:'Overview', orders:'My Orders', addresses:'Addresses' };
 
-        // Address Management
-        function openAddressModal() {
-            document.getElementById('addrModalTitle').innerText = 'Add New Address';
-            document.getElementById('addr_id').value = '';
-            document.getElementById('addressForm').reset();
-            document.getElementById('addressModal').classList.add('active');
-        }
+function go(id, el) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.nl').forEach(l => l.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+  if(el) el.classList.add('on');
+  document.getElementById('crumbCur').textContent = crumbLabels[id] || id;
+}
+function closeM(id) { document.getElementById(id).classList.remove('on'); }
+document.querySelectorAll('.modal').forEach(m => {
+  m.addEventListener('click', e => { if(e.target===m) m.classList.remove('on'); });
+});
 
-        function editAddress(addr) {
-            document.getElementById('addrModalTitle').innerText = 'Edit Address';
-            document.getElementById('addr_id').value = addr._id;
-            document.getElementById('addr_name').value = addr.name || '';
-            document.getElementById('addr_phone').value = addr.phone || '';
-            document.getElementById('addr_street').value = addr.street || '';
-            document.getElementById('addr_city').value = addr.city || '';
-            document.getElementById('addr_state').value = addr.state || '';
-            document.getElementById('addr_zip').value = addr.zip || '';
-            document.getElementById('addressModal').classList.add('active');
-        }
+function openAddr() {
+  document.getElementById('addrT').innerText = 'Add New Address';
+  document.getElementById('a_id').value = '';
+  ['a_name','a_phone','a_street','a_city','a_state','a_zip'].forEach(id => document.getElementById(id).value='');
+  document.getElementById('mAddr').classList.add('on');
+}
+function editAddr(a) {
+  document.getElementById('addrT').innerText = 'Edit Address';
+  document.getElementById('a_id').value     = a._id;
+  document.getElementById('a_name').value   = a.name   || '';
+  document.getElementById('a_phone').value  = a.phone  || '';
+  document.getElementById('a_street').value = a.street || '';
+  document.getElementById('a_city').value   = a.city   || '';
+  document.getElementById('a_state').value  = a.state  || '';
+  document.getElementById('a_zip').value    = a.zip    || '';
+  document.getElementById('mAddr').classList.add('on');
+}
 
-        // View Order Details
-        async function viewOrderDetails(id) {
-            const modal = document.getElementById('orderModal');
-            const content = document.getElementById('orderDetailsContent');
-            modal.classList.add('active');
-            content.innerHTML = '<p>Searching for order details...</p>';
+function viewOrder(id) {
+  document.getElementById('mOrder').classList.add('on');
+  const c = document.getElementById('oContent');
+  c.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;">Loading…</p>';
+  const o = ordersData.find(x => x._id === id);
+  if(!o) { c.innerHTML='<p style="color:var(--muted);">Order not found.</p>'; return; }
 
-            try {
-                // Use the backend API directly via proxy logic if needed, 
-                // but since we're in PHP, let's use a hidden endpoint or just a simple fetch if CORS is okay.
-                // Assuming the backend is on port 5000 as per other files.
-                const resp = await fetch('urbanwear-backend/src/api/orders/' + id, { // This path might be wrong depending on how you've set up proxies
-                    // Alternatively, we can use a PHP proxy script or just rely on the data already in the $orders array if we find it.
-                });
-                
-                // Let's find it in the already fetched PHP $orders array (converted to JS)
-                const ordersData = <?php echo json_encode($orders); ?>;
-                const o = ordersData.find(order => order._id === id);
+  const st = (o.orderStatus||'').toLowerCase();
+  const items = (o.products||[]).map(p => `
+    <div class="od-row">
+      <div style="flex:1;">
+        <div class="od-name">${p.productId?.title||'Product'}</div>
+        <div class="od-meta">Size: ${p.size||'M'} &nbsp;·&nbsp; Qty: ${p.quantity}</div>
+      </div>
+      <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+        <div class="od-price">₹${(p.price*p.quantity).toLocaleString('en-IN')}</div>
+        <button class="btn btn-out btn-sm" onclick="openReview('${p.productId?._id||p.productId}','${o._id}')">
+          <i class="fa-regular fa-star"></i> Rate
+        </button>
+      </div>
+    </div>`).join('');
 
-                if (o) {
-                    let itemsHtml = o.products.map(p => `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 0; border-bottom:1px solid #eee;">
-                            <div style="flex:1;">
-                                <p style="font-weight:600; margin-bottom:4px;">${p.productId?.title || 'Product'}</p>
-                                <p style="font-size:12px; color:#666;">Size: ${p.size || 'M'} | Qty: ${p.quantity}</p>
-                            </div>
-                            <div style="text-align:right;">
-                                <p style="font-weight:700; margin-bottom:8px;">₹${(p.price * p.quantity).toLocaleString()}</p>
-                                <button class="btn btn-outline btn-sm" onclick="openReviewModal('${p.productId?._id || p.productId}', '${o._id}')" style="font-size:12px; padding:6px 12px;">
-                                    ⭐ Rate Product
-                                </button>
-                            </div>
-                        </div>
-                    `).join('');
+  c.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:1.3rem;font-weight:500;color:var(--ink);">Order #${o._id}</div>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:3px;">${new Date(o.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}</div>
+      </div>
+      <span class="pill s-${st}">${o.orderStatus}</span>
+    </div>
+    <div class="od-addr">
+      <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.22em;color:var(--muted);margin-bottom:8px;">Delivery Address</div>
+      <div style="font-size:0.88rem;font-weight:600;color:var(--ink);margin-bottom:4px;">${o.shipping?.name||'Customer'}</div>
+      <div style="font-size:0.78rem;color:var(--mid);font-weight:300;line-height:1.7;">
+        ${o.shipping?.address||o.shipping?.street||''}, ${o.shipping?.city||''}<br>
+        ${o.shipping?.mobile||o.shipping?.phone||''}
+      </div>
+    </div>
+    <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.22em;color:var(--muted);margin-bottom:12px;">Items</div>
+    ${items}
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:baseline;">
+      <div style="font-size:0.72rem;color:var(--muted);">${o.paymentMethod||'COD'} · ${o.paymentStatus||'Pending'}</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:500;color:var(--ink);">₹${o.totalAmount.toLocaleString('en-IN')}</div>
+    </div>`;
+}
 
-                    content.innerHTML = `
-                        <div style="margin-bottom:20px;">
-                            <p style="font-size:14px; color:#666;">Order ID: <b>#${o._id}</b></p>
-                            <p style="font-size:14px; color:#666;">Placed on: ${new Date(o.createdAt).toLocaleDateString()} at ${new Date(o.createdAt).toLocaleTimeString()}</p>
-                        </div>
-                        <div style="background:#f9f9f9; padding:15px; border-radius:12px; margin-bottom:20px;">
-                            <h5 style="margin-bottom:10px;">Ship to:</h5>
-                            <p style="font-size:14px;">${o.shipping?.name || 'Customer'}</p>
-                            <p style="font-size:14px; color:#666;">${o.shipping?.address || o.shipping?.street || ''}, ${o.shipping?.city || ''}</p>
-                            <p style="font-size:14px; color:#666;">Phone: ${o.shipping?.mobile || o.shipping?.phone || ''}</p>
-                        </div>
-                        <h5 style="margin-bottom:10px;">Items Ordered:</h5>
-                        ${itemsHtml}
-                        <div style="margin-top:20px; text-align:right;">
-                            <p style="font-size:14px;">Subtotal: ₹${o.totalAmount.toLocaleString()}</p>
-                            <p style="font-size:18px; font-weight:800; margin-top:5px;">Total: ₹${o.totalAmount.toLocaleString()}</p>
-                        </div>
-                        <div style="margin-top:20px; padding-top:15px; border-top:1px solid #eee;">
-                            <p style="font-size:12px; color:#999;">Payment Method: ${o.paymentMethod || 'COD'}</p>
-                            <p style="font-size:12px; color:#999;">Status: ${o.orderStatus}</p>
-                        </div>
-                    `;
-                } else {
-                    content.innerHTML = '<p>Order not found.</p>';
-                }
-            } catch (e) {
-                content.innerHTML = '<p>Error loading order details.</p>';
-            }
-        }
-
-        // Review Functions
-        let selectedReviewRating = 0;
-
-        function selectRating(rating) {
-            selectedReviewRating = rating;
-            const stars = document.querySelectorAll('.review-star');
-            stars.forEach((star, index) => {
-                if (index < rating) {
-                    star.classList.add('active');
-                    star.textContent = '★';
-                } else {
-                    star.classList.remove('active');
-                    star.textContent = '☆';
-                }
-            });
-        }
-
-        function openReviewModal(productId, orderId) {
-            document.getElementById('review_product_id').value = productId;
-            document.getElementById('review_order_id').value = orderId;
-            document.getElementById('review_text').value = '';
-            document.getElementById('reviewMessage').innerHTML = '';
-            selectedReviewRating = 0;
-            
-            // Reset stars
-            document.querySelectorAll('.review-star').forEach(star => {
-                star.classList.remove('active');
-                star.textContent = '☆';
-            });
-            
-            document.getElementById('reviewModal').classList.add('active');
-        }
-
-        async function submitProductReview() {
-            const productId = document.getElementById('review_product_id').value;
-            const orderId = document.getElementById('review_order_id').value;
-            const reviewText = document.getElementById('review_text').value;
-            const messageDiv = document.getElementById('reviewMessage');
-            const submitBtn = document.getElementById('submitReviewBtn');
-
-            if (selectedReviewRating === 0) {
-                messageDiv.innerHTML = '<span style="color:#dc2626;">Please select a rating</span>';
-                return;
-            }
-
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Submitting...';
-            messageDiv.innerHTML = '';
-
-            try {
-                const response = await fetch('http://localhost:5000/api/v1/reviews', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer <?php echo getAuthToken(); ?>'
-                    },
-                    body: JSON.stringify({
-                        productId: productId,
-                        orderId: orderId,
-                        rating: selectedReviewRating,
-                        reviewText: reviewText
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    messageDiv.innerHTML = '<span style="color:#15803d;">✓ Review submitted successfully!</span>';
-                    setTimeout(() => {
-                        closeModal('reviewModal');
-                        location.reload();
-                    }, 1500);
-                } else {
-                    messageDiv.innerHTML = `<span style="color:#dc2626;">${data.message || 'Error submitting review'}</span>`;
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Submit Review';
-                }
-            } catch (error) {
-                messageDiv.innerHTML = '<span style="color:#dc2626;">Network error. Please try again.</span>';
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Submit Review';
-            }
-        }
-    </script>
+let rR = 0;
+function setR(r) {
+  rR = r;
+  document.querySelectorAll('.rstar').forEach((s,i) => s.classList.toggle('on', i < r));
+}
+function openReview(pid, oid) {
+  document.getElementById('r_pid').value = pid;
+  document.getElementById('r_oid').value = oid;
+  document.getElementById('r_txt').value = '';
+  document.getElementById('r_msg').innerHTML = '';
+  rR = 0;
+  document.querySelectorAll('.rstar').forEach(s => s.classList.remove('on'));
+  document.getElementById('mReview').classList.add('on');
+}
+async function submitReview() {
+  const pid = document.getElementById('r_pid').value;
+  const oid = document.getElementById('r_oid').value;
+  const txt = document.getElementById('r_txt').value;
+  const msg = document.getElementById('r_msg');
+  if(!rR) { msg.textContent = 'Please select a rating.'; msg.style.color='var(--red)'; return; }
+  msg.textContent = 'Submitting…'; msg.style.color='var(--muted)';
+  try {
+    const r = await fetch(`http://127.0.0.1:5000/api/v1/products/${pid}/reviews/`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer <?php echo $token; ?>'},
+      body: JSON.stringify({ rating:rR, comment:txt, orderId:oid })
+    });
+    const d = await r.json();
+    if(d.success) { msg.textContent='✓ Review submitted!'; msg.style.color='var(--grn)'; setTimeout(()=>closeM('mReview'),1800); }
+    else { msg.textContent = d.message||'Error submitting.'; msg.style.color='var(--red)'; }
+  } catch(e) { msg.textContent='Network error.'; msg.style.color='var(--red)'; }
+}
+</script>
 </body>
 </html>

@@ -9,7 +9,7 @@ require_once __DIR__ . '/config.php';
  * Professional PHP cURL wrapper for Node.js Express backend
  * 
  * Usage:
- *   $api = new URBANWEARApi('http://localhost:5000');
+ *   $api = new URBANWEARApi('http://127.0.0.1:5000');
  *   $result = $api->post('/api/v1/auth/login', ['email' => 'user@example.com', 'password' => 'password']);
  */
 
@@ -17,7 +17,7 @@ class URBANWEARApi {
     private $baseUrl;
     private $timeout = 30;
     
-    public function __construct($baseUrl = 'http://localhost:5000') {
+    public function __construct($baseUrl = 'http://127.0.0.1:5000') {
         $this->baseUrl = rtrim($baseUrl, '/');
     }
     
@@ -43,6 +43,13 @@ class URBANWEARApi {
     }
     
     /**
+     * Make PATCH request to backend (JSON body)
+     */
+    public function patch($endpoint, $data = [], $token = null) {
+        return $this->request('PATCH', $endpoint, $data, $token);
+    }
+    
+    /**
      * Make DELETE request to backend
      */
     public function delete($endpoint, $token = null) {
@@ -61,6 +68,9 @@ class URBANWEARApi {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'URBANWEAR-PHP-Client');
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         
         // Check if data contains a CURLFile for multipart/form-data
         $isMultipart = false;
@@ -105,12 +115,14 @@ class URBANWEARApi {
         curl_close($ch);
         
         // Handle cURL errors
-        if ($error) {
+        if ($error || $response === false) {
+            $msg = $error ? $error : "Empty response (possibly connection refused or timeout)";
+            error_log("URBANWEAR_API_ERROR: $method $url - $msg");
             return [
                 'success' => false,
-                'message' => 'Connection error: ' . $error,
-                'error' => $error,
-                'statusCode' => 0
+                'message' => 'Connection error: ' . $msg,
+                'error' => $msg,
+                'statusCode' => $httpCode
             ];
         }
         
@@ -218,7 +230,7 @@ function clearAuthSession() {
  */
 function requireLogin() {
     if (!isLoggedIn()) {
-        header('Location: /clothing_project/login.php');
+        header('Location: login.php');
         exit;
     }
 }
@@ -229,7 +241,7 @@ function requireLogin() {
 function requireAdmin() {
     if (!isAdmin()) {
         error_log("Admin access denied. Session: " . json_encode($_SESSION));
-        header('Location: /clothing_project/login.php');
+        header('Location: login.php');
         exit;
     }
 }
@@ -253,4 +265,4 @@ function getCurrentUser() {
 /**
  * Initialize API client globally
  */
-$API = new URBANWEARApi('http://localhost:5000');
+$API = new URBANWEARApi('http://127.0.0.1:5000');

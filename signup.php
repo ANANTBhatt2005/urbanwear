@@ -92,6 +92,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Sign Up | UrbanWear</title>
     <link rel="stylesheet" href="css/premium-auth.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .password-wrapper {
+            position: relative;
+        }
+        .password-toggle {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #888;
+            z-index: 10;
+        }
+        .validation-list {
+            list-style: none;
+            padding: 0;
+            margin: 8px 0 0 0;
+            font-size: 0.8rem;
+            color: #666;
+        }
+        .validation-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 4px;
+            transition: color 0.3s ease;
+        }
+        .validation-item i {
+            margin-right: 8px;
+            font-size: 10px;
+        }
+        .validation-item.valid {
+            color: #2ecc71;
+        }
+        .validation-item.invalid {
+            color: #e74c3c;
+        }
+    </style>
 </head>
 <body>
 
@@ -142,15 +179,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <div class="form-group">
                         <label for="password">Password</label>
-                        <input type="password" id="password" name="password" required placeholder="Create a password">
+                        <div class="password-wrapper">
+                            <input type="password" id="password" name="password" required placeholder="Create a password">
+                            <i class="fa-solid fa-eye password-toggle" id="togglePassword"></i>
+                        </div>
+                        <div id="password-hint" class="validation-list" style="margin-top:5px; font-size:0.8rem; color:#666;">
+                            Password must be at least 6 characters
+                        </div>
                     </div>
 
                     <div class="form-group">
                         <label for="confirm_password">Confirm Password</label>
-                        <input type="password" id="confirm_password" name="confirm_password" required placeholder="Confirm your password">
+                        <div class="password-wrapper">
+                            <input type="password" id="confirm_password" name="confirm_password" required placeholder="Confirm your password">
+                            <i class="fa-solid fa-eye password-toggle" id="toggleConfirm"></i>
+                        </div>
+                        <div id="match-message" class="validation-list" style="margin-top:5px; font-size:0.8rem;"></div>
                     </div>
 
-                    <button type="submit" class="btn-auth">Sign Up</button>
+                    <button type="submit" class="btn-auth" id="submitBtn">Sign Up</button>
                 </form>
 
                 <div class="auth-links">
@@ -160,6 +207,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const passwordInput = document.getElementById('password');
+            const confirmInput = document.getElementById('confirm_password');
+            const submitBtn = document.getElementById('submitBtn');
+            const togglePassword = document.getElementById('togglePassword');
+            const toggleConfirm = document.getElementById('toggleConfirm');
+            
+            function validatePassword() {
+                const val = passwordInput.value;
+                const hint = document.getElementById('password-hint');
+                
+                if (val.length >= 6) {
+                    hint.innerHTML = '<span style="color:#2ecc71"><i class="fa-solid fa-check"></i> Valid length</span>';
+                    return true;
+                } else {
+                    hint.innerHTML = 'Password must be at least 6 characters';
+                    return false;
+                }
+            }
+
+            function checkMatch() {
+                const matchMsg = document.getElementById('match-message');
+                if (confirmInput.value.length > 0) {
+                    if (passwordInput.value === confirmInput.value) {
+                        matchMsg.innerHTML = '<span style="color:#2ecc71"><i class="fa-solid fa-check"></i> Passwords match</span>';
+                        return true;
+                    } else {
+                        matchMsg.innerHTML = '<span style="color:#e74c3c"><i class="fa-solid fa-times"></i> Passwords do not match</span>';
+                        return false;
+                    }
+                }
+                matchMsg.innerHTML = '';
+                return false;
+            }
+
+            function toggleVisibility(input, icon) {
+                const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+                input.setAttribute('type', type);
+                icon.classList.toggle('fa-eye');
+                icon.classList.toggle('fa-eye-slash');
+            }
+
+            passwordInput.addEventListener('input', validatePassword);
+            confirmInput.addEventListener('input', checkMatch);
+            
+            togglePassword.addEventListener('click', () => toggleVisibility(passwordInput, togglePassword));
+            toggleConfirm.addEventListener('click', () => toggleVisibility(confirmInput, toggleConfirm));
+
+            document.querySelector('form').addEventListener('submit', function(e) {
+                if (!validatePassword() || passwordInput.value !== confirmInput.value) {
+                    e.preventDefault();
+                    alert('Please ensure all password requirements are met and passwords match.');
+                } else {
+                    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating Account...';
+                    submitBtn.disabled = true;
+                }
+            });
+        });
+    </script>
 </body>
 </html>
-

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Half Star Rating Logic</title>
+    <!-- FontAwesome for Star Icons (Standard in your project) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+        }
+
+        .rating-modal {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 320px;
+        }
+
+        .star-container {
+            display: inline-flex;
+            gap: 5px;
+            font-size: 2.5rem; /* Large stars for easy clicking */
+            cursor: pointer;
+            margin: 20px 0;
+        }
+
+        .star-container i {
+            color: #e0e0e0; /* Default empty color (Light Gray) */
+            transition: color 0.1s;
+        }
+
+        /* Active Color (Gold/Amber) */
+        .star-container i.active {
+            color: #f59e0b;
+        }
+        
+        .rating-value-display {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #333;
+            min-height: 1.5em;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="rating-modal">
+        <h3>Rate Product</h3>
+        
+        <!-- Star Container -->
+        <div class="star-container" id="starContainer">
+            <!-- Data-index is 0-based for calculation -->
+            <i class="fa-regular fa-star" data-index="0"></i>
+            <i class="fa-regular fa-star" data-index="1"></i>
+            <i class="fa-regular fa-star" data-index="2"></i>
+            <i class="fa-regular fa-star" data-index="3"></i>
+            <i class="fa-regular fa-star" data-index="4"></i>
+        </div>
+
+        <div class="rating-value-display">Rating: <span id="displayRating">0</span></div>
+        
+        <!-- Hidden input to store the actual value for form submission -->
+        <input type="hidden" id="ratingInput" name="rating" value="0">
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const container = document.getElementById('starContainer');
+            const stars = container.querySelectorAll('i');
+            const display = document.getElementById('displayRating');
+            const input = document.getElementById('ratingInput');
+            
+            let currentRating = 0;
+
+            // Function to render stars based on value
+            function renderStars(value) {
+                stars.forEach((star, index) => {
+                    // Reset to empty first
+                    star.className = 'fa-regular fa-star'; 
+                    star.classList.remove('active');
+
+                    if (value >= index + 1) {
+                        star.className = 'fa-solid fa-star active'; // Full Star
+                    } else if (value >= index + 0.5) {
+                        star.className = 'fa-solid fa-star-half-stroke active'; // Half Star
+                    }
+                });
+                display.textContent = value;
+            }
+
+            // 1. Handle Hover (Preview)
+            container.addEventListener('mousemove', (e) => {
+                const star = e.target.closest('i');
+                if (!star) return;
+
+                const rect = star.getBoundingClientRect();
+                const width = rect.width;
+                const x = e.clientX - rect.left; // Mouse X position inside the star
+                const index = parseInt(star.dataset.index);
+
+                // Logic: If x is less than half width, it's a half star
+                const isHalf = x < (width / 2);
+                const hoverValue = isHalf ? index + 0.5 : index + 1;
+
+                renderStars(hoverValue);
+            });
+
+            // 2. Handle Mouse Leave (Reset to selected)
+            container.addEventListener('mouseleave', () => {
+                renderStars(currentRating);
+            });
+
+            // 3. Handle Click (Save)
+            container.addEventListener('click', (e) => {
+                const star = e.target.closest('i');
+                if (!star) return;
+
+                const rect = star.getBoundingClientRect();
+                const width = rect.width;
+                const x = e.clientX - rect.left;
+                const index = parseInt(star.dataset.index);
+                
+                const isHalf = x < (width / 2);
+                currentRating = isHalf ? index + 0.5 : index + 1;
+
+                // Save and Log
+                input.value = currentRating;
+                console.log("Selected Rating:", currentRating);
+                
+                renderStars(currentRating);
+            });
+        });
+    </script>
+</body>
+</html>

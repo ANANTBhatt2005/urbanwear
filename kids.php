@@ -3,7 +3,26 @@ session_start();
 // KIDS Category - premium catalog view
 require_once __DIR__ . '/api-helper.php';
 $category = 'kids';
-$res = $API->get('/api/v1/products?category=' . urlencode($category) . '&limit=200');
+$userWishlistIds = [];
+$token = getAuthToken();
+if ($token) {
+    $wishlistRes = $API->get('/api/v1/wishlist/user', $token);
+    if (isset($wishlistRes['success']) && $wishlistRes['success'] && isset($wishlistRes['data'])) {
+        foreach ($wishlistRes['data'] as $w) {
+            $userWishlistIds[] = (string)($w['productId']);
+        }
+    }
+}
+$color = $_GET['color'] ?? '';
+$minPrice = $_GET['minPrice'] ?? '';
+$maxPrice = $_GET['maxPrice'] ?? '';
+
+$queryParams = 'category=' . urlencode($category) . '&limit=200';
+if ($color) $queryParams .= '&color=' . urlencode($color);
+if ($minPrice) $queryParams .= '&minPrice=' . urlencode($minPrice);
+if ($maxPrice) $queryParams .= '&maxPrice=' . urlencode($maxPrice);
+
+$res = $API->get('/api/v1/products/?' . $queryParams);
 $products = [];
 $api_error = null;
 if (!empty($res) && isset($res['success']) && $res['success'] && is_array($res['data'])) {
@@ -20,8 +39,22 @@ if (!empty($res) && isset($res['success']) && $res['success'] && is_array($res['
 } else {
   $api_error = $res['message'] ?? 'Unable to load products';
 }
-?>
 
+// Fetch category details for banner
+$category_res = $API->get('/api/v1/categories/');
+$cat = [];
+if ($category_res['success'] && is_array($category_res['data'])) {
+    foreach ($category_res['data'] as $c) {
+        if (strtolower($c['slug'] ?? '') === 'kids') {
+            $cat = $c;
+            break;
+        }
+    }
+}
+$bannerImage = $cat['bannerImage'] ?? '';
+$bannerVideo = $cat['bannerVideo'] ?? '';
+$bannerType  = $cat['bannerType']  ?? 'image';
+?>
 <!doctype html>
 <html lang="en">
 <head>
@@ -29,14 +62,571 @@ if (!empty($res) && isset($res['success']) && $res['success'] && is_array($res['
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="category" content="kids" />
   <title>Kids | UrbanWear Collection</title>
-  <link href="css/premium-plp.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:opsz,wght@9..40,200;9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="css/search-autocomplete.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    window.IS_LOGGED_IN = <?php echo isLoggedIn() ? 'true' : 'false'; ?>;
+    window.AUTH_TOKEN = '<?php echo getAuthToken(); ?>';
+    window.URBANWEAR_TOKEN = window.AUTH_TOKEN;
+  </script>
+  <style>
+    /* ══════════════════════════════════════
+       URBANWEAR — EARTH TONES DESIGN SYSTEM
+       ══════════════════════════════════════ */
+    :root {
+      --clay:         #c8b49a;
+      --sand:         #e8ddd0;
+      --parchment:    #f5efe6;
+      --cream:        #faf7f2;
+      --bark:         #5c4a38;
+      --moss:         #6b7c5e;
+      --rust:         #b5522a;
+      --ink:          #2c2318;
+      --warm-white:   #fffdf9;
+      --glass-bg:     rgba(250,247,242,0.72);
+      --glass-border: rgba(200,180,154,0.3);
+      --transition:   all 0.5s cubic-bezier(0.16,1,0.3,1);
+    }
+
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--cream);
+      color: var(--ink);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { text-decoration:none; color:inherit; }
+
+    ::-webkit-scrollbar { width:4px; }
+    ::-webkit-scrollbar-track { background:var(--cream); }
+    ::-webkit-scrollbar-thumb { background:var(--clay); border-radius:4px; }
+
+    /* ── MARQUEE ── */
+    .marquee-strip {
+      background: var(--bark);
+      color: var(--sand);
+      padding: 10px 0;
+      overflow: hidden;
+      white-space: nowrap;
+      position: fixed; top:0; width:100%; z-index:1001;
+      height: 36px;
+    }
+    .marquee-track {
+      display: inline-flex;
+      animation: mScroll 30s linear infinite;
+    }
+    .marquee-track span {
+      font-size: 0.68rem;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      padding: 0 50px;
+    }
+    .marquee-track span::before { content:'✦'; margin-right:50px; color:var(--clay); }
+    @keyframes mScroll { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+
+    /* ── NAVBAR ── */
+    .site-nav {
+      position: fixed;
+      top: 36px; width:100%; z-index:1000;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 60px;
+      height: 68px;
+      transition: var(--transition);
+      background: transparent;
+    }
+    .site-nav.scrolled {
+      background: rgba(250,247,242,0.95);
+      backdrop-filter: blur(18px) saturate(1.4);
+      border-bottom: 1px solid var(--glass-border);
+      box-shadow: 0 4px 30px rgba(92,74,56,0.07);
+    }
+    .brand a {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.75rem; font-weight:600;
+      letter-spacing: 6px; text-transform:uppercase;
+      color: var(--warm-white);
+      transition: var(--transition);
+    }
+    .site-nav.scrolled .brand a { color: var(--bark); }
+
+    .site-nav .links {
+      display: flex; align-items:center; gap:32px;
+    }
+    .site-nav .links a {
+      font-size: 0.74rem; font-weight:400;
+      text-transform: uppercase; letter-spacing:0.18em;
+      color: rgba(255,255,255,0.85);
+      position: relative; transition:var(--transition);
+    }
+    .site-nav.scrolled .links a { color: var(--bark); }
+    .site-nav .links a.active,
+    .site-nav .links a:hover { color: var(--rust) !important; }
+    .site-nav .links a::after {
+      content:''; position:absolute; bottom:-4px; left:0;
+      width:0; height:1px; background:var(--rust); transition:var(--transition);
+    }
+    .site-nav .links a:hover::after,
+    .site-nav .links a.active::after { width:100%; }
+    .cart-count-badge { background: var(--rust) !important; }
+
+    /* ── HERO ── */
+    .plp-hero {
+      height: 72vh; min-height:480px;
+      background:
+        radial-gradient(ellipse at 70% 50%, rgba(181,82,42,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse at 20% 80%, rgba(107,124,94,0.1) 0%, transparent 55%),
+        radial-gradient(ellipse at 90% 10%, rgba(200,180,154,0.15) 0%, transparent 50%),
+        linear-gradient(135deg, var(--ink) 0%, #3d2e1e 40%, #2c2318 100%);
+      display: flex;
+      flex-direction: row;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 0 80px 60px;
+      margin-top: calc(36px + 68px);
+      position: relative; overflow:hidden;
+    }
+    .plp-hero::after {
+      content:''; position:absolute; inset:0; pointer-events:none;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E") repeat;
+      background-size:180px; opacity:0.035;
+    }
+    .plp-hero-eyebrow {
+      display:inline-flex; align-items:center; gap:14px;
+      font-size:0.7rem; text-transform:uppercase;
+      letter-spacing:0.45em; color:var(--clay); margin-bottom:14px;
+      position:relative; z-index:1;
+    }
+    .plp-hero-eyebrow::before { content:''; width:36px; height:1px; background:var(--clay); display:block; }
+    .plp-hero h1 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(2.8rem,6vw,5.2rem);
+      font-weight: 300; color: var(--warm-white);
+      line-height:1; margin-bottom:12px;
+      position:relative; z-index:1;
+    }
+    .plp-hero h1 em { font-style:italic; color:var(--clay); }
+    .plp-hero p {
+      font-size:0.9rem; color:rgba(255,255,255,0.6);
+      font-weight:300; letter-spacing:0.08em;
+      position:relative; z-index:1;
+    }
+    .hero-stats {
+      display: flex; align-items: center; gap: 0;
+      margin-top: 36px;
+      position: relative; z-index:1;
+    }
+    .hero-stat {
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 16px 28px;
+      background: rgba(250,247,242,0.12);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(200,180,154,0.25);
+    }
+    .hero-stat:first-child { border-right: none; }
+    .hero-stat:last-child { border-left: none; }
+    .stat-num {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.4rem; font-weight: 500;
+      color: var(--warm-white); line-height:1;
+    }
+    .stat-label {
+      font-size: 0.65rem; text-transform: uppercase;
+      letter-spacing: 0.25em; color: var(--clay);
+    }
+    .hero-stat-divider {
+      width: 1px; height: 50px;
+      background: rgba(200,180,154,0.3);
+    }
+
+    /* ── CATALOG LAYOUT ── */
+    .catalog-layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 0;
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 0 40px 100px;
+      align-items: start;
+    }
+
+    /* ── SIDEBAR ── */
+    #plp-sidebar {
+      position: sticky;
+      top: calc(36px + 68px + 20px);
+      padding: 40px 28px 40px 8px;
+      border-right: 1px solid var(--glass-border);
+    }
+    .sf-section-heading {
+      font-family:'Cormorant Garamond', serif;
+      font-size:1.05rem; font-weight:500;
+      color:var(--bark); letter-spacing:0.05em;
+      margin-bottom:28px;
+      padding-bottom:14px;
+      border-bottom:1px solid var(--glass-border);
+    }
+    .sf-group { margin-bottom:30px; }
+    .sf-title {
+      font-size:0.68rem; text-transform:uppercase;
+      letter-spacing:0.3em; color:var(--moss);
+      margin-bottom:14px; font-weight:500;
+    }
+    .sf-cat-list { list-style:none; display:flex; flex-direction:column; gap:4px; }
+    .sf-cat-item {
+      font-size:0.85rem; color:#8a7060;
+      padding:9px 14px; border-radius:2px;
+      cursor:pointer; transition:var(--transition);
+      font-weight:300; border:1px solid transparent;
+    }
+    .sf-cat-item:hover { color:var(--bark); background:var(--parchment); }
+    .sf-cat-item.active { color:var(--warm-white); background:var(--bark); border-color:var(--bark); }
+
+    .sf-size-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; }
+    .sf-size-btn {
+      padding:9px 4px; font-size:0.78rem;
+      font-family:'DM Sans',sans-serif; font-weight:400;
+      text-align:center;
+      background:var(--parchment);
+      border:1px solid var(--glass-border);
+      color:var(--bark); cursor:pointer;
+      transition:var(--transition);
+    }
+    .sf-size-btn:hover, .sf-size-btn.active {
+      background:var(--bark); color:var(--warm-white); border-color:var(--bark);
+    }
+
+    .sf-color-grid { display:flex; flex-wrap:wrap; gap:10px; }
+    .sf-color-swatch {
+      width:30px; height:30px; border-radius:50%;
+      border:2px solid transparent;
+      cursor:pointer; transition:var(--transition);
+      box-shadow:0 2px 8px rgba(0,0,0,0.12); outline:none;
+    }
+    .sf-color-swatch:hover, .sf-color-swatch.active {
+      border-color:var(--rust); transform:scale(1.15);
+    }
+
+    .sf-price-inputs { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .sf-price-field {
+      display:flex; align-items:center; gap:6px;
+      background:var(--parchment); border:1px solid var(--glass-border);
+      padding:8px 12px; flex:1;
+    }
+    .sf-price-field span { font-size:0.8rem; color:var(--clay); }
+    .sf-price-input {
+      width:100%; border:none; background:transparent;
+      font-family:'DM Sans',sans-serif;
+      font-size:0.85rem; color:var(--bark); outline:none;
+    }
+    .sf-price-sep { font-size:0.85rem; color:var(--clay); flex-shrink:0; }
+    .sf-apply-btn {
+      width:100%; padding:11px;
+      background:var(--bark); color:var(--warm-white);
+      font-family:'DM Sans',sans-serif;
+      font-size:0.72rem; letter-spacing:0.2em; text-transform:uppercase;
+      border:none; cursor:pointer; transition:var(--transition);
+    }
+    .sf-apply-btn:hover { background:var(--rust); }
+    .sf-clear-btn {
+      display:block; text-align:center;
+      font-size:0.72rem; letter-spacing:0.2em; text-transform:uppercase;
+      color:var(--clay); padding:12px;
+      border:1px solid var(--glass-border); margin-top:10px;
+      transition:var(--transition);
+    }
+    .sf-clear-btn:hover { color:var(--rust); border-color:var(--rust); }
+
+    /* ── CATALOG MAIN ── */
+    .catalog-main { padding:40px 0 0 48px; }
+
+    /* ── ANALYTICS SECTION (unchanged structure, styled) ── */
+    .analytics-section {
+      display: flex;
+      gap: 32px;
+      align-items: flex-start;
+      margin-bottom: 48px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .filter-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 200px;
+    }
+    .filter-btn {
+      display: inline-flex; align-items:center; gap:10px;
+      padding: 13px 20px;
+      font-family:'DM Sans',sans-serif;
+      font-size: 0.78rem; text-transform:uppercase;
+      letter-spacing: 0.1em;
+      background: var(--parchment);
+      border: 1px solid var(--glass-border);
+      color: #8a7060; cursor:pointer;
+      transition: var(--transition); text-align:left;
+    }
+    .filter-btn:hover { background:var(--sand); color:var(--bark); }
+    .filter-btn.active {
+      background:var(--bark); color:var(--warm-white);
+      border-color:var(--bark);
+    }
+    .filter-btn i { font-size:0.75rem; opacity:0.8; }
+
+    .chart-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      background: var(--warm-white);
+      border: 1px solid var(--glass-border);
+      padding: 30px;
+    }
+    #donutChart { max-width:220px; max-height:220px; }
+    .chart-legend { flex:1; display:flex; flex-direction:column; gap:12px; }
+    .chart-legend-item {
+      display:flex; align-items:center; gap:12px;
+      font-size:0.85rem; color:var(--bark);
+    }
+    .chart-legend-item .legend-color {
+      width:14px; height:14px; border-radius:2px; flex-shrink:0;
+    }
+    .chart-legend-item .legend-count {
+      margin-left:auto; font-weight:500; color:var(--rust);
+      font-family:'Cormorant Garamond',serif; font-size:1rem;
+    }
+
+    /* Video Hero Styles */
+    .hero-video {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover; z-index: 0;
+      filter: brightness(0.6) saturate(0.85);
+    }
+    .hero-video-overlay {
+      position: absolute; inset: 0; z-index: 1;
+      background: linear-gradient(
+        to bottom,
+        rgba(44,35,24,0.15) 0%,
+        rgba(44,35,24,0.05) 40%,
+        rgba(250,247,242,0.90) 100%
+      );
+    }
+    .hero-left { position: relative; z-index: 2; }
+
+    /* ══════════════════════════════════════
+       URBANWEAR — EARTH TONES DESIGN SYSTEM
+       ══════════════════════════════════════ */
+    /* ── PRODUCT GRID ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3,1fr);
+      gap: 26px;
+    }
+    .product-card-link { display:block; }
+    .product-card {
+      background: var(--warm-white);
+      transition: var(--transition);
+      position:relative; overflow:hidden;
+    }
+    .product-card:hover {
+      transform:translateY(-6px);
+      box-shadow:0 24px 60px rgba(92,74,56,0.13);
+    }
+
+    /* Media */
+    .card-media {
+      position:relative; aspect-ratio:3/4;
+      overflow:hidden; background:var(--sand);
+    }
+    .card-media img {
+      width:100%; height:100%; object-fit:cover;
+      opacity:0;
+      transition:opacity 0.8s ease, transform 0.9s cubic-bezier(0.16,1,0.3,1);
+    }
+    .card-media img.loaded { opacity:1; }
+    .product-card:hover .card-media img { transform:scale(1.06); }
+
+    /* Badge */
+    .badge-new {
+      position:absolute; top:14px; left:14px; z-index:2;
+      background:var(--rust); color:var(--warm-white);
+      font-size:0.6rem; letter-spacing:0.18em;
+      text-transform:uppercase; padding:5px 12px;
+    }
+
+    /* Glass hover actions */
+    .card-actions {
+      position:absolute; bottom:0; left:0; right:0;
+      padding:18px 16px 16px;
+      background: var(--glass-bg);
+      backdrop-filter:blur(14px) saturate(1.5);
+      -webkit-backdrop-filter:blur(14px) saturate(1.5);
+      border-top:1px solid var(--glass-border);
+      transform:translateY(100%);
+      transition:transform 0.5s cubic-bezier(0.16,1,0.3,1);
+    }
+    .product-card:hover .card-actions { transform:translateY(0); }
+
+    .add-to-cart-btn {
+      width:100%; padding:12px;
+      background:var(--bark); color:var(--warm-white);
+      font-family:'DM Sans',sans-serif;
+      font-size:0.72rem; letter-spacing:0.22em; text-transform:uppercase;
+      border:none; cursor:pointer; transition:var(--transition);
+    }
+    .add-to-cart-btn:hover { background:var(--rust); }
+
+    /* Card meta */
+    .card-meta { padding:15px 15px 17px; }
+    .product-title {
+      font-size:0.88rem; font-weight:400; color:var(--bark);
+      margin-bottom:7px; letter-spacing:0.02em;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .product-price {
+      font-family:'Cormorant Garamond', serif;
+      font-size:1.1rem; font-weight:600; color:var(--rust);
+    }
+
+    /* Empty */
+    .empty {
+      grid-column:1/-1; text-align:center;
+      padding:100px 40px; color:var(--clay);
+      font-size:1rem; font-weight:300; letter-spacing:0.05em;
+    }
+
+
+    
+
+
+    /* ── HERO GEOMETRIC DECORATIONS ── */
+    /* Large circle ring */
+    .hero-ring-1 {
+      position:absolute; width:520px; height:520px;
+      border-radius:50%;
+      border: 1px solid rgba(200,180,154,0.1);
+      top:50%; right:-80px;
+      transform:translateY(-50%);
+      pointer-events:none;
+    }
+    .hero-ring-2 {
+      position:absolute; width:380px; height:380px;
+      border-radius:50%;
+      border: 1px solid rgba(181,82,42,0.15);
+      top:50%; right:-10px;
+      transform:translateY(-50%);
+      pointer-events:none;
+    }
+    .hero-ring-3 {
+      position:absolute; width:200px; height:200px;
+      border-radius:50%;
+      border: 1px solid rgba(200,180,154,0.2);
+      top:50%; right:100px;
+      transform:translateY(-50%);
+      pointer-events:none;
+    }
+    /* Diagonal lines decoration top-left */
+    .hero-diag-lines {
+      position:absolute; top:0; left:0;
+      width:300px; height:300px;
+      pointer-events:none; overflow:hidden;
+    }
+    .hero-diag-lines::before {
+      content:'';
+      position:absolute; top:-100px; left:-100px;
+      width:500px; height:500px;
+      background: repeating-linear-gradient(
+        45deg,
+        transparent,
+        transparent 28px,
+        rgba(200,180,154,0.04) 28px,
+        rgba(200,180,154,0.04) 29px
+      );
+    }
+    /* Bottom horizontal rule */
+    .hero-rule {
+      position:absolute; bottom:0; left:0; right:0;
+      height:1px;
+      background:linear-gradient(to right, transparent, rgba(200,180,154,0.3) 30%, rgba(181,82,42,0.4) 60%, transparent);
+    }
+    /* Dot grid pattern top-right area */
+    .hero-dot-grid {
+      position:absolute; top:40px; right:340px;
+      width:120px; height:120px;
+      pointer-events:none;
+      background-image: radial-gradient(circle, rgba(200,180,154,0.25) 1px, transparent 1px);
+      background-size: 16px 16px;
+      opacity:0.6;
+    }
+    /* Number label */
+    .hero-num-label {
+      position:absolute; top:44px; left:80px;
+      font-family:'Cormorant Garamond',serif;
+      font-size:7rem; font-weight:300; line-height:1;
+      color:rgba(200,180,154,0.06);
+      letter-spacing:-0.05em;
+      pointer-events:none; user-select:none;
+    }
+    /* Thin vertical accent line */
+    .hero-v-line {
+      position:absolute; top:60px; bottom:60px;
+      left:calc(80px + 430px);
+      width:1px;
+      background:linear-gradient(to bottom, transparent, rgba(200,180,154,0.2) 30%, rgba(200,180,154,0.2) 70%, transparent);
+    }
+
+    /* ── REVEAL ── */
+    .reveal { opacity:0; transform:translateY(26px); transition:opacity 0.65s ease, transform 0.65s cubic-bezier(0.16,1,0.3,1); }
+    .reveal.visible { opacity:1; transform:translateY(0); }
+
+    /* ── RESPONSIVE ── */
+    @media(max-width:1100px){
+      .catalog-layout{ grid-template-columns:220px 1fr; padding:0 24px 80px; }
+      .grid{ grid-template-columns:repeat(2,1fr); }
+    }
+    @media(max-width:860px){
+      .catalog-layout{ grid-template-columns:1fr; }
+      #plp-sidebar{ position:static; border-right:none; border-bottom:1px solid var(--glass-border); padding:24px 0; }
+      .catalog-main{ padding:30px 0 0; }
+      .plp-hero{ padding:0 28px 50px; }
+      .site-nav{ padding:0 24px; }
+      .analytics-section{ flex-direction:column; }
+    }
+    @media(max-width:600px){
+      .grid{ grid-template-columns:repeat(2,1fr); gap:14px; }
+    }
+    @media(max-width:400px){
+      .grid{ grid-template-columns:1fr; }
+    }
+  </style>
 </head>
 <body>
-  
-  <nav class="site-nav">
+
+  <!-- Marquee Strip -->
+  <div class="marquee-strip">
+    <div class="marquee-track">
+      <span>Kids' Collection 2025</span>
+      <span>Premium Fabrics</span>
+      <span>Free Shipping Above ₹999</span>
+      <span>Fun &amp; Playful Styles</span>
+      <span>Crafted in India</span>
+      <span>Kids' Collection 2025</span>
+      <span>Premium Fabrics</span>
+      <span>Free Shipping Above ₹999</span>
+      <span>Fun &amp; Playful Styles</span>
+      <span>Crafted in India</span>
+    </div>
+  </div>
+
+  <!-- Navbar -->
+  <nav class="site-nav" id="siteNav">
     <script>
       window.IS_LOGGED_IN = <?php echo isLoggedIn() ? 'true' : 'false'; ?>;
       window.AUTH_TOKEN = '<?php echo getAuthToken(); ?>';
@@ -48,10 +638,19 @@ if (!empty($res) && isset($res['success']) && $res['success'] && is_array($res['
       <a href="men.php">Men</a>
       <a href="women.php">Women</a>
       <a href="kids.php" class="active">Kids</a>
-      <a href="cart.php" style="position:relative; margin-right: 15px;">
+      <a href="cart.php" style="position:relative; margin-right:15px;">
         <i class="fa-solid fa-bag-shopping"></i> Cart
-        <span class="cart-count-badge" style="display:none; position: absolute; top: -8px; right: -12px; background: #c5a059; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 700; min-width: 18px; text-align: center; display: flex; align-items: center; justify-content: center;">0</span>
+        <span class="cart-count-badge" style="display:none; position:absolute; top:-8px; right:-12px; background:var(--rust); color:#fff; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:700; min-width:18px; text-align:center; display:flex; align-items:center; justify-content:center;">0</span>
       </a>
+      <div class="search-container">
+        <div class="search-input-wrapper" id="searchWrapper">
+          <button class="search-icon-btn" id="searchIconBtn">
+            <i class="fa-solid fa-magnifying-glass"></i>
+          </button>
+          <input type="text" id="searchInput" class="search-input" placeholder="Search products...">
+        </div>
+        <div class="search-results-dropdown" id="searchResults"></div>
+      </div>
       <?php if(isset($_SESSION['user_id'])): ?>
         <?php include 'includes/user-profile-dropdown.php'; ?>
       <?php else: ?>
@@ -60,89 +659,291 @@ if (!empty($res) && isset($res['success']) && $res['success'] && is_array($res['
     </div>
   </nav>
 
+  <!-- Hero -->
   <header class="plp-hero">
-    <h1>Kids' Collection</h1>
-    <p>Comfort and style. For the little explorers.</p>
+    <?php if ($bannerType === 'video' && $bannerVideo): ?>
+      <!-- Video background -->
+      <video class="hero-video" autoplay muted loop playsinline
+        poster="<?php echo htmlspecialchars($bannerImage); ?>">
+        <source src="<?php echo htmlspecialchars($bannerVideo); ?>" type="video/mp4">
+      </video>
+      <div class="hero-video-overlay"></div>
+    <?php elseif ($bannerImage): ?>
+      <!-- Image background override -->
+      <style>
+        .plp-hero {
+          background:
+            linear-gradient(to bottom, rgba(44,35,24,0.22) 0%, rgba(44,35,24,0.08) 45%, rgba(250,247,242,0.88) 100%),
+            url('<?php echo htmlspecialchars($bannerImage); ?>') center 30% / cover no-repeat !important;
+        }
+      </style>
+    <?php endif; ?>
+
+    <!-- Geometric decorations -->
+    <div class="hero-ring-1"></div>
+    <div class="hero-ring-2"></div>
+    <div class="hero-ring-3"></div>
+    <div class="hero-diag-lines"></div>
+    <div class="hero-dot-grid"></div>
+    <div class="hero-rule"></div>
+    <div class="hero-num-label">01</div>
+    <div class="hero-v-line"></div>
+    <!-- Decorative vertical text -->
+    
+    <!-- Corner brackets -->
+    
+    
+    <!-- Floating live badge -->
+    
+
+    <!-- Left content -->
+    <div class="hero-left">
+      <div class="plp-hero-eyebrow">Little Ones 2025</div>
+      <h1>Kids' <em>Collection</em></h1>
+      <p>Comfort and style. For the little explorers.</p>
+      <div class="hero-stats">
+        <div class="hero-stat"><span class="stat-num">150+</span><span class="stat-label">Styles</span></div>
+        <div class="hero-stat-divider"></div>
+        <div class="hero-stat"><span class="stat-num">Premium</span><span class="stat-label">Fabrics</span></div>
+        <div class="hero-stat-divider"></div>
+        <div class="hero-stat"><span class="stat-num">Fun</span><span class="stat-label">Designs</span></div>
+      </div>
+    </div>
+
+    <!-- Right glass panel -->
+    <div class="hero-right-panel">
+      <div class="hero-panel-item">
+        <i class="fas fa-gem"></i>
+        <div><div class="panel-title">Premium Quality</div><div class="panel-sub">Ethically sourced fabrics</div></div>
+      </div>
+      <div class="hero-panel-item">
+        <i class="fas fa-truck-fast"></i>
+        <div><div class="panel-title">Free Delivery</div><div class="panel-sub">Orders above &#8377;999</div></div>
+      </div>
+      <div class="hero-panel-item">
+        <i class="fas fa-rotate-left"></i>
+        <div><div class="panel-title">30-Day Returns</div><div class="panel-sub">Hassle-free policy</div></div>
+      </div>
+      <a href="#" class="panel-cta">Explore All Styles <i class="fas fa-arrow-right" style="font-size:0.65rem;"></i></a>
+    </div>
   </header>
 
-  <main class="catalog">
-    <!-- Analytics Section -->
-    <section class="analytics-section">
-      <div class="filter-sidebar">
-        <button class="filter-btn active" data-filter="all">
-          <i class="fa-solid fa-grid-2"></i> All Products
-        </button>
-        <button class="filter-btn" data-filter="bestsellers">
-          <i class="fa-solid fa-fire"></i> Bestsellers
-        </button>
-        <button class="filter-btn" data-filter="trending">
-          <i class="fa-solid fa-arrow-trend-up"></i> Trending
-        </button>
-        <button class="filter-btn" data-filter="timeless">
-          <i class="fa-solid fa-gem"></i> Timeless
-        </button>
+  <!-- =====================================================
+       CATALOG LAYOUT — sidebar + main (structure unchanged)
+       ===================================================== -->
+  <div class="catalog-layout">
+
+    <!-- LEFT SIDEBAR -->
+    <aside id="plp-sidebar">
+      <div class="sf-section-heading">Refine &amp; Filter</div>
+
+      <!-- CATEGORY -->
+      <div class="sf-group">
+        <div class="sf-title">Category</div>
+        <ul class="sf-cat-list">
+          <li class="sf-cat-item active" data-filter="all">All Products</li>
+          <li class="sf-cat-item" data-filter="bestsellers">Bestsellers</li>
+          <li class="sf-cat-item" data-filter="trending">Trending</li>
+          <li class="sf-cat-item" data-filter="timeless">Timeless</li>
+        </ul>
       </div>
 
-      <div class="chart-container" id="analyticsChart" style="display:none;">
-        <canvas id="donutChart"></canvas>
-        <div class="chart-legend" id="chartLegend"></div>
+      <!-- SIZE -->
+      <div class="sf-group">
+        <div class="sf-title">Size</div>
+        <div class="sf-size-grid">
+          <button class="sf-size-btn" data-size="XS">XS</button>
+          <button class="sf-size-btn" data-size="S">S</button>
+          <button class="sf-size-btn" data-size="M">M</button>
+          <button class="sf-size-btn" data-size="L">L</button>
+          <button class="sf-size-btn" data-size="XL">XL</button>
+          <button class="sf-size-btn" data-size="XXL">XXL</button>
+        </div>
       </div>
-    </section>
 
-    <!-- Product Grid -->
-    <?php if ($api_error): ?>
-      <div class="empty">We couldn't load the collection. Please try again later.</div>
-    <?php elseif (empty($products)): ?>
-      <div class="empty">No products found in this collection.</div>
-    <?php else: ?>
-      <div class="grid">
-        <?php foreach ($products as $p): ?>
-          <!-- Product Card -->
-          <a href="product.php?id=<?php echo urlencode($p['id']); ?>" class="product-card-link" style="text-decoration: none; color: inherit; display: block;">
-          <article class="product-card">
-            
-            <div class="card-media">
-               <?php 
-               
-                 if (rand(0, 10) > 8) echo '<span class="badge-new">New</span>';
-               ?>
-              <img src="<?php echo htmlspecialchars($p['img']); ?>" alt="<?php echo htmlspecialchars($p['name']); ?>">
-              
-              <div class="card-actions">
-                <button class="add-to-cart-btn"
-                  data-id="<?php echo htmlspecialchars($p['id']); ?>"
-                  data-name="<?php echo htmlspecialchars($p['name']); ?>"
-                  data-price="<?php echo htmlspecialchars(number_format($p['price'],2,'.','')); ?>"
-                  data-discount-percentage="<?php echo htmlspecialchars($p['discount_percentage']); ?>"
-                  data-image="<?php echo htmlspecialchars($p['img']); ?>"
-                  data-category="kids">
-                  ADD TO CART
-                </button>
-              </div>
-            </div>
-
-            <div class="card-meta">
-              <div class="product-title"><?php echo htmlspecialchars($p['name']); ?></div>
-              <?php 
-                $originalPrice = $p['price'];
-                $discount = $p['discount_percentage'];
-                if ($discount > 0) {
-                    $discountedPrice = $originalPrice - ($originalPrice * $discount / 100);
-                    echo '<div class="product-price">₹' . number_format($discountedPrice) . ' <span style="text-decoration:line-through; color:#878787; font-size:0.8rem; margin-left:5px;">₹' . number_format($originalPrice) . '</span> <small style="color:#388e3c; margin-left:5px;">' . $discount . '% OFF</small></div>';
-                } else {
-                    echo '<div class="product-price">₹' . number_format($originalPrice) . '</div>';
-                }
-              ?>
-            </div>
-
-          </article>
-          </a>
-        <?php endforeach; ?>
+      <!-- COLOR -->
+      <div class="sf-group">
+        <div class="sf-title">Color</div>
+        <div class="sf-color-grid">
+          <button class="sf-color-swatch" data-color="Red"    title="Red"    style="background:#e53935;"></button>
+          <button class="sf-color-swatch" data-color="Blue"   title="Blue"   style="background:#1e88e5;"></button>
+          <button class="sf-color-swatch" data-color="Yellow" title="Yellow" style="background:#f9c936;"></button>
+          <button class="sf-color-swatch" data-color="Green"  title="Green"  style="background:#43a047;"></button>
+          <button class="sf-color-swatch" data-color="White"  title="White"  style="background:#fff; border-color:var(--glass-border);"></button>
+          <button class="sf-color-swatch" data-color="Grey"   title="Grey"   style="background:#888;"></button>
+          <button class="sf-color-swatch" data-color="Pink"   title="Pink"   style="background:#e8a0b0;"></button>
+          <button class="sf-color-swatch" data-color="Purple" title="Purple" style="background:#8e24aa;"></button>
+        </div>
       </div>
-    <?php endif; ?>
-  </main>
+
+      <!-- PRICE -->
+      <div class="sf-group">
+        <div class="sf-title">Price</div>
+        <div class="sf-price-inputs">
+          <div class="sf-price-field">
+            <span>₹</span>
+            <input id="sf-min-price" class="sf-price-input" type="number" placeholder="Min" min="0">
+          </div>
+          <span class="sf-price-sep">—</span>
+          <div class="sf-price-field">
+            <span>₹</span>
+            <input id="sf-max-price" class="sf-price-input" type="number" placeholder="Max" min="0">
+          </div>
+        </div>
+        <button class="sf-apply-btn" id="sf-price-apply">Apply</button>
+      </div>
+
+      <a class="sf-clear-btn" id="sf-clear-all" href="#">Clear All Filters</a>
+    </aside>
+    <!-- END SIDEBAR -->
+
+    <!-- MAIN CONTENT -->
+    <div class="catalog-main">
+      <main class="catalog">
+
+        <!-- Analytics Section (structure 100% unchanged) -->
+        <section class="analytics-section">
+          <div class="filter-sidebar">
+            <button class="filter-btn active" data-filter="all">
+              <i class="fa-solid fa-grid-2"></i> All Products
+            </button>
+            <button class="filter-btn" data-filter="bestsellers">
+              <i class="fa-solid fa-fire"></i> Bestsellers
+            </button>
+            <button class="filter-btn" data-filter="trending">
+              <i class="fa-solid fa-arrow-trend-up"></i> Trending
+            </button>
+            <button class="filter-btn" data-filter="timeless">
+              <i class="fa-solid fa-gem"></i> Timeless
+            </button>
+          </div>
+
+          <div class="chart-container" id="analyticsChart" style="display:none;">
+            <canvas id="donutChart"></canvas>
+            <div class="chart-legend" id="chartLegend"></div>
+          </div>
+        </section>
+
+        <!-- Product Grid -->
+        <?php if ($api_error): ?>
+          <div class="empty">We couldn't load the collection. Please try again later.</div>
+        <?php elseif (empty($products)): ?>
+          <div class="empty">No products found in this collection.</div>
+        <?php else: ?>
+          <div class="grid">
+            <?php foreach ($products as $i => $p):
+              $originalPrice   = $p['price'];
+              $discount        = $p['discount_percentage'];
+              $discountedPrice = $discount > 0 ? $originalPrice - ($originalPrice * $discount / 100) : $originalPrice;
+            ?>
+            <a href="product.php?id=<?php echo urlencode($p['id']); ?>" class="product-card-link reveal" style="transition-delay:<?php echo ($i % 6) * 0.06; ?>s">
+              <article class="product-card">
+                <div class="card-media">
+                  <?php if (rand(0,10) > 8): ?>
+                    <span class="badge-new">New Arrival</span>
+                  <?php endif; ?>
+                  <?php $isWishlisted = in_array((string)$p['id'], $userWishlistIds); ?>
+                  <button class="wishlist-toggle-btn" 
+                          onclick="event.preventDefault(); toggleWishlist('<?php echo htmlspecialchars($p['id']); ?>', this)" 
+                          style="position:absolute; top:14px; right:14px; z-index:2; background:var(--white); border:1px solid var(--border); border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; color:var(--muted); transition:all 0.2s;">
+                    <i class="<?php echo $isWishlisted ? 'fa-solid' : 'fa-regular'; ?> fa-heart" <?php if($isWishlisted) echo 'style="color:var(--red, #9e3a2a);"'; ?>></i>
+                  </button>
+                  <img src="<?php echo htmlspecialchars($p['img']); ?>"
+                       alt="<?php echo htmlspecialchars($p['name']); ?>"
+                       loading="lazy"
+                       onload="this.classList.add('loaded')">
+                  <div class="card-actions">
+                    <button class="add-to-cart-btn"
+                      data-id="<?php echo htmlspecialchars($p['id']); ?>"
+                      data-name="<?php echo htmlspecialchars($p['name']); ?>"
+                      data-price="<?php echo htmlspecialchars(number_format($discountedPrice,2,'.','')); ?>"
+                      data-discount-percentage="<?php echo htmlspecialchars($p['discount_percentage']); ?>"
+                      data-image="<?php echo htmlspecialchars($p['img']); ?>"
+                      data-category="kids">
+                      ADD TO CART
+                    </button>
+                  </div>
+                </div>
+                <div class="card-meta">
+                  <div class="product-title"><?php echo htmlspecialchars($p['name']); ?></div>
+                  <?php if ($discount > 0): ?>
+                    <div class="product-price">
+                      ₹<?php echo number_format($discountedPrice); ?>
+                      <span style="text-decoration:line-through; color:var(--clay); font-size:0.8rem; font-weight:300; margin-left:6px;">₹<?php echo number_format($originalPrice); ?></span>
+                      <small style="color:var(--moss); font-size:0.75rem; margin-left:4px;"><?php echo $discount; ?>% OFF</small>
+                    </div>
+                  <?php else: ?>
+                    <div class="product-price">₹<?php echo number_format($originalPrice); ?></div>
+                  <?php endif; ?>
+                </div>
+              </article>
+            </a>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
+
+      </main>
+    </div><!-- /.catalog-main -->
+
+  </div><!-- /.catalog-layout -->
 
   <script src="assets/js/cart.js"></script>
   <script src="assets/js/category-analytics.js"></script>
+  <script src="assets/js/sidebar-filters.js"></script>
+  <script src="assets/js/wishlist.js"></script>
+  <script src="assets/js/search-autocomplete.js"></script>
+
+  <script>
+    // Navbar scroll
+    const nav = document.getElementById('siteNav');
+    window.addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 60));
+    nav.classList.add('scrolled');
+
+    // Scroll reveal
+    document.addEventListener("DOMContentLoaded", () => {
+      setTimeout(() => {
+        document.querySelectorAll('.reveal').forEach(el => el.classList.add('visible'));
+      }, 100);
+    });
+
+    // Sidebar cat pills sync with analytics filter btns
+    document.querySelectorAll('.sf-cat-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.sf-cat-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        const f = item.dataset.filter;
+        document.querySelectorAll('.filter-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.filter === f);
+        });
+      });
+    });
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const f = btn.dataset.filter;
+        document.querySelectorAll('.sf-cat-item').forEach(i => {
+          i.classList.toggle('active', i.dataset.filter === f);
+        });
+      });
+    });
+
+    // Size toggle
+    document.querySelectorAll('.sf-size-btn').forEach(btn => {
+      btn.addEventListener('click', () => btn.classList.toggle('active'));
+    });
+
+    // Color swatch single select
+    document.querySelectorAll('.sf-color-swatch').forEach(sw => {
+      sw.addEventListener('click', () => {
+        document.querySelectorAll('.sf-color-swatch').forEach(s => s.classList.remove('active'));
+        sw.classList.add('active');
+      });
+    });
+  </script>
+
+  <!-- UrbanBot AI Fashion Assistant -->
+  <link rel="stylesheet" href="css/urbanbot.css">
+  <script src="assets/js/urbanbot.js"></script>
 </body>
 </html>

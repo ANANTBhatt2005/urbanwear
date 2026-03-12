@@ -1,331 +1,1123 @@
 <?php
 session_start();
 require_once 'api-helper.php';
-
-// Protect page
 requireLogin();
-
 $isLoggedIn = isLoggedIn();
 $user = getCurrentUser();
 $token = getAuthToken();
-
-// Fetch addresses if logged in
 $addresses = [];
 if ($isLoggedIn && $token) {
     $resp = $API->get('/api/v1/addresses', $token);
-    if ($resp['success']) {
-        $addresses = $resp['data'] ?? [];
-    }
+    if ($resp['success']) { $addresses = $resp['data'] ?? []; }
 }
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Checkout — UrbanWear</title>
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-  <style>
-    .container{max-width:800px;margin:40px auto;padding:20px}
-    .form-group{margin-bottom:16px}
-    .form-group label{display:block;margin-bottom:6px;font-weight:600;color:#333}
-    .form-group input, .form-group select{width:100%;padding:12px;border:1px solid #ddd;border-radius:6px;font-size:14px}
-    .summary-item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee}
-    .total-row{font-size:1.3rem;font-weight:700;margin-top:20px;display:flex;justify-content:space-between;border-top:2px solid #333;padding-top:15px}
-    
-    .btn{width:100%;padding:14px;border:none;border-radius:6px;font-size:1rem;font-weight:bold;cursor:pointer;margin-bottom:10px;transition:0.3s}
-    .btn-cod{background:#6c757d;color:white}
-    .btn-online{background:#007bff;color:white}
-    .btn:hover{opacity:0.9}
-    
-    .checkout-grid{display:grid;grid-template-columns:1fr 0.8fr;gap:40px}
-    @media(max-width:768px){.checkout-grid{grid-template-columns:1fr}}
-    
-    .address-card{border:2px solid #eee;border-radius:6px;padding:15px;margin-bottom:10px;cursor:pointer;position:relative}
-    .address-card.selected{border-color:#007bff;background:#f0f7ff}
-    .address-card input{position:absolute;top:15px;right:15px}
-    
-    .success-msg{background:#d4edda;color:#155724;padding:20px;border-radius:8px;text-align:center}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Checkout — URBANWEAR</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Outfit:wght@200;300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<style>
+:root {
+  --off:    #f7f4f0;
+  --white:  #fdfcfb;
+  --border: #e0dbd4;
+  --ink:    #1a1714;
+  --mid:    #7a7168;
+  --light:  #b8b0a6;
+  --accent: #1a1714;
+  --rust:   #9e4a24;
+  --moss:   #4a6040;
+  --ease:   cubic-bezier(0.16,1,0.3,1);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:'Outfit',sans-serif;
+  background:var(--off);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+a{text-decoration:none;color:inherit;}
+button{font-family:'Outfit',sans-serif;cursor:pointer;}
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-thumb{background:var(--border);}
+
+/* ══ NAV ══ */
+.nav{
+  height:64px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 60px;
+  background:var(--white);
+  border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:100;
+}
+.nav-logo{
+  font-family:'Playfair Display',serif;
+  font-size:1.1rem;font-weight:700;
+  letter-spacing:5px;text-transform:uppercase;
+}
+.nav-steps{
+  display:flex;align-items:center;gap:0;
+}
+.nav-step{
+  display:flex;align-items:center;gap:8px;
+  font-size:0.7rem;letter-spacing:0.18em;text-transform:uppercase;
+  color:var(--light);font-weight:400;
+  padding:0 18px;
+}
+.nav-step.done{color:var(--moss);}
+.nav-step.active{color:var(--ink);font-weight:600;}
+.nav-step-num{
+  width:22px;height:22px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.65rem;font-weight:700;
+  border:1.5px solid currentColor;
+  flex-shrink:0;
+}
+.nav-step-sep{width:32px;height:1px;background:var(--border);}
+.nav-back{
+  font-size:0.7rem;letter-spacing:0.15em;text-transform:uppercase;
+  color:var(--mid);display:flex;align-items:center;gap:7px;
+}
+.nav-back:hover{color:var(--ink);}
+
+/* ══ PAGE ══ */
+.page{
+  max-width:960px;margin:0 auto;
+  padding:56px 40px 80px;
+}
+
+/* ══ PAGE TITLE ══ */
+.checkout-head{
+  margin-bottom:52px;
+  display:flex;align-items:flex-end;justify-content:space-between;
+  border-bottom:1px solid var(--border);
+  padding-bottom:24px;
+}
+.checkout-title{
+  font-family:'Playfair Display',serif;
+  font-size:2.6rem;font-weight:400;
+  letter-spacing:-0.02em;color:var(--ink);
+  line-height:1;
+}
+.checkout-title em{font-style:italic;color:var(--rust);}
+.checkout-subtitle{
+  font-size:0.75rem;letter-spacing:0.3em;
+  text-transform:uppercase;color:var(--light);
+  margin-top:6px;font-weight:300;
+}
+.checkout-secure{
+  display:flex;align-items:center;gap:7px;
+  font-size:0.72rem;color:var(--mid);letter-spacing:0.08em;
+}
+
+/* ══ SECTIONS ══ */
+.co-section{
+  margin-bottom:40px;
+  border:1px solid var(--border);
+  background:var(--white);
+}
+.co-section-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:22px 28px;
+  border-bottom:1px solid var(--border);
+}
+.co-section-num{
+  font-size:0.6rem;letter-spacing:0.4em;text-transform:uppercase;
+  color:var(--light);margin-bottom:4px;font-weight:400;
+}
+.co-section-title{
+  font-size:0.82rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:0.2em;
+  color:var(--ink);
+}
+.co-section-body{padding:28px;}
+
+/* ══ SAVED ADDRESSES ══ */
+.addr-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+.addr-option{
+  border:1.5px solid var(--border);
+  padding:18px 20px;
+  cursor:pointer;
+  transition:all 0.3s var(--ease);
+  position:relative;
+}
+.addr-option.sel{
+  border-color:var(--ink);
+  background:var(--off);
+}
+.addr-option:hover{border-color:var(--mid);}
+.addr-check{
+  position:absolute;top:14px;right:14px;
+  width:18px;height:18px;border-radius:50%;
+  border:1.5px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  transition:all 0.25s;
+}
+.addr-option.sel .addr-check{
+  background:var(--ink);border-color:var(--ink);
+}
+.addr-option.sel .addr-check::after{
+  content:'';width:6px;height:6px;
+  background:var(--white);border-radius:50%;
+}
+.addr-name{font-size:0.9rem;font-weight:600;margin-bottom:6px;color:var(--ink);}
+.addr-text{font-size:0.8rem;color:var(--mid);font-weight:300;line-height:1.7;}
+.addr-new-link{
+  font-size:0.72rem;letter-spacing:0.15em;text-transform:uppercase;
+  color:var(--mid);cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+  border:none;background:none;padding:0;
+  transition:color 0.2s;
+}
+.addr-new-link:hover{color:var(--ink);}
+
+/* ══ FORM FIELDS ══ */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.form-grid.full{grid-template-columns:1fr;}
+.field{position:relative;}
+.field label{
+  display:block;
+  font-size:0.6rem;letter-spacing:0.32em;text-transform:uppercase;
+  color:var(--mid);margin-bottom:8px;font-weight:500;
+}
+.field input,.field select{
+  width:100%;
+  padding:13px 16px;
+  background:var(--off);
+  border:1px solid var(--border);
+  font-family:'Outfit',sans-serif;
+  font-size:0.92rem;color:var(--ink);
+  outline:none;
+  transition:all 0.28s;
+  -webkit-appearance:none;
+}
+.field input:focus,.field select:focus{
+  border-color:var(--ink);
+  background:var(--white);
+}
+.field input::placeholder{color:var(--light);}
+
+/* ══ ORDER SUMMARY ══ */
+.summary-line{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  padding:14px 0;border-bottom:1px solid var(--border);
+}
+.summary-line:last-of-type{border-bottom:none;}
+.sline-left{display:flex;gap:14px;align-items:flex-start;flex:1;}
+.sline-img{
+  width:54px;height:68px;
+  background:var(--off);
+  flex-shrink:0;overflow:hidden;
+}
+.sline-img img{width:100%;height:100%;object-fit:cover;}
+.sline-name{font-size:0.88rem;font-weight:500;color:var(--ink);margin-bottom:4px;}
+.sline-meta{font-size:0.73rem;color:var(--light);font-weight:300;line-height:1.6;}
+.sline-price{font-size:0.92rem;font-weight:600;color:var(--ink);flex-shrink:0;}
+
+.summary-totals{margin-top:20px;border-top:1px solid var(--border);padding-top:16px;}
+.tot-row{
+  display:flex;justify-content:space-between;
+  font-size:0.82rem;color:var(--mid);font-weight:300;
+  padding:6px 0;
+}
+.tot-row.disc{color:var(--moss);}
+.tot-row.bold{
+  font-size:1rem;font-weight:600;color:var(--ink);
+  border-top:1px solid var(--ink);
+  margin-top:10px;padding-top:14px;
+}
+
+/* ══ PAYMENT METHODS ══ */
+.pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;}
+.pay-opt{
+  border:1.5px solid var(--border);
+  padding:16px 18px;
+  cursor:pointer;
+  display:flex;align-items:center;gap:12px;
+  transition:all 0.28s var(--ease);
+  position:relative;
+}
+.pay-opt:hover{border-color:var(--mid);}
+.pay-opt.sel{border-color:var(--ink);background:var(--off);}
+.pay-opt-icon{font-size:1.2rem;flex-shrink:0;}
+.pay-opt-label{font-size:0.78rem;font-weight:500;text-transform:uppercase;letter-spacing:0.1em;color:var(--ink);}
+.pay-opt-sub{font-size:0.68rem;color:var(--light);margin-top:2px;font-weight:300;}
+.pay-tick{
+  position:absolute;top:12px;right:12px;
+  width:16px;height:16px;border-radius:50%;
+  border:1.5px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  transition:all 0.25s;
+}
+.pay-opt.sel .pay-tick{background:var(--ink);border-color:var(--ink);}
+.pay-opt.sel .pay-tick::after{content:'';width:5px;height:5px;background:var(--white);border-radius:50%;}
+
+/* Online pay input area */
+.online-fields{
+  display:none;
+  border:1px solid var(--border);
+  padding:24px;
+  background:var(--off);
+  margin-bottom:20px;
+}
+.online-fields.show{display:block;animation:panelIn 0.35s var(--ease);}
+@keyframes panelIn{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:translateY(0);}}
+
+.pay-tabs{
+  display:flex;gap:0;
+  border-bottom:1px solid var(--border);
+  margin-bottom:22px;
+}
+.pay-tab{
+  padding:10px 20px;
+  font-size:0.68rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:0.18em;
+  color:var(--light);
+  background:none;border:none;cursor:pointer;
+  border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+  transition:all 0.25s;
+}
+.pay-tab.on{color:var(--ink);border-bottom-color:var(--ink);}
+.pay-panel{display:none;}
+.pay-panel.on{display:block;}
+.upi-apps{
+  display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;
+}
+.upi-chip{
+  padding:6px 14px;
+  border:1px solid var(--border);
+  font-size:0.7rem;font-weight:600;
+  color:var(--mid);cursor:pointer;
+  transition:all 0.2s;
+  background:var(--white);
+}
+.upi-chip:hover{border-color:var(--ink);color:var(--ink);}
+
+/* ══ PLACE ORDER BTN ══ */
+.place-btn{
+  width:100%;padding:18px;
+  background:var(--ink);color:var(--white);
+  border:none;
+  font-size:0.82rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:0.3em;
+  cursor:pointer;
+  transition:all 0.32s var(--ease);
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  margin-top:8px;
+}
+.place-btn:hover{background:var(--rust);}
+.place-btn:disabled{opacity:0.5;cursor:not-allowed;}
+.place-btn .btn-amount{
+  font-size:0.95rem;font-weight:700;
+  opacity:0.9;
+}
+.place-note{
+  text-align:center;font-size:0.7rem;color:var(--light);
+  margin-top:12px;letter-spacing:0.06em;
+}
+
+/* ══ SUCCESS ══ */
+.success-screen{
+  display:none;
+  text-align:center;
+  padding:80px 40px;
+  border:1px solid var(--border);
+  background:var(--white);
+}
+.success-icon{
+  width:72px;height:72px;border-radius:50%;
+  background:rgba(74,96,64,0.1);
+  display:flex;align-items:center;justify-content:center;
+  margin:0 auto 24px;
+  font-size:1.8rem;
+  animation:popIn 0.5s var(--ease);
+}
+@keyframes popIn{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}
+.success-title{
+  font-family:'Playfair Display',serif;
+  font-size:2.2rem;font-weight:400;color:var(--ink);
+  margin-bottom:10px;
+}
+.success-sub{font-size:0.88rem;color:var(--mid);font-weight:300;line-height:1.7;margin-bottom:28px;}
+.success-actions{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;}
+
+.btn-outline-dark{
+  padding:13px 28px;
+  border:1.5px solid var(--ink);
+  background:none;color:var(--ink);
+  font-size:0.72rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:0.2em;
+  cursor:pointer;transition:all 0.28s;
+}
+.btn-outline-dark:hover{background:var(--ink);color:var(--white);}
+.btn-solid-dark{
+  padding:13px 28px;
+  background:var(--ink);color:var(--white);
+  border:1.5px solid var(--ink);
+  font-size:0.72rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:0.2em;
+  cursor:pointer;transition:all 0.28s;
+}
+.btn-solid-dark:hover{background:var(--rust);border-color:var(--rust);}
+
+/* ══ PAYMENT MODAL ══ */
+.modal-wrap{
+  display:none;position:fixed;inset:0;
+  background:rgba(26,23,20,0.6);
+  backdrop-filter:blur(8px);
+  z-index:9000;
+  align-items:center;justify-content:center;padding:20px;
+}
+.modal-wrap.open{display:flex;animation:mfade 0.25s ease;}
+@keyframes mfade{from{opacity:0}to{opacity:1}}
+.modal-box{
+  background:var(--white);
+  width:100%;max-width:420px;
+  position:relative;
+  overflow:hidden;
+  animation:mslide 0.38s var(--ease);
+}
+@keyframes mslide{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+.modal-top{
+  background:var(--ink);
+  padding:22px 28px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.modal-top-brand{
+  font-family:'Playfair Display',serif;
+  font-size:0.95rem;letter-spacing:4px;text-transform:uppercase;
+  color:var(--white);font-weight:400;
+}
+.modal-top-amt{
+  font-size:1.2rem;font-weight:700;
+  color:#e8d5a3;letter-spacing:0.02em;
+}
+.modal-close{
+  background:none;border:none;
+  color:rgba(255,255,255,0.4);font-size:1.3rem;
+  cursor:pointer;line-height:1;padding:0;
+  transition:color 0.2s;
+}
+.modal-close:hover{color:var(--white);}
+
+.modal-body{padding:28px;}
+.modal-tabs{
+  display:flex;border-bottom:1px solid var(--border);
+  margin-bottom:24px;
+}
+.modal-tab{
+  flex:1;padding:10px 4px;text-align:center;
+  font-size:0.65rem;font-weight:700;letter-spacing:0.18em;
+  text-transform:uppercase;color:var(--light);
+  background:none;border:none;cursor:pointer;
+  border-bottom:2px solid transparent;margin-bottom:-1px;
+  transition:all 0.22s;
+}
+.modal-tab.on{color:var(--ink);border-bottom-color:var(--ink);}
+.modal-panel{display:none;}
+.modal-panel.on{display:block;}
+
+.mfield{margin-bottom:16px;}
+.mfield label{
+  display:block;font-size:0.58rem;letter-spacing:0.32em;
+  text-transform:uppercase;color:var(--mid);margin-bottom:7px;font-weight:500;
+}
+.mfield input,.mfield select{
+  width:100%;padding:12px 14px;
+  background:var(--off);border:1px solid var(--border);
+  font-family:'Outfit',sans-serif;font-size:0.9rem;color:var(--ink);
+  outline:none;transition:all 0.25s;
+}
+.mfield input:focus,.mfield select:focus{border-color:var(--ink);background:var(--white);}
+.mfield-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+
+.mupi-logos{display:flex;gap:8px;margin-bottom:16px;}
+.mupi-logo{
+  padding:5px 11px;border:1px solid var(--border);
+  font-size:0.68rem;font-weight:700;color:var(--mid);
+  background:var(--off);
+}
+
+.pay-now-btn{
+  width:100%;padding:15px;
+  background:var(--ink);color:var(--white);
+  border:none;
+  font-size:0.78rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.25em;
+  cursor:pointer;transition:all 0.28s;
+  margin-top:6px;
+}
+.pay-now-btn:hover{background:var(--rust);}
+.pay-now-btn:disabled{opacity:0.5;cursor:not-allowed;}
+.modal-note{
+  font-size:0.68rem;color:var(--light);
+  text-align:center;margin-top:10px;letter-spacing:0.06em;
+}
+.fail-link{
+  font-size:0.68rem;color:rgba(158,74,36,0.7);
+  text-align:center;margin-top:6px;cursor:pointer;
+  text-decoration:underline;display:block;
+}
+
+/* Processing */
+.pay-proc{
+  display:none;position:absolute;inset:0;
+  background:var(--white);z-index:10;
+  flex-direction:column;align-items:center;justify-content:center;gap:20px;
+}
+.pay-proc.on{display:flex;}
+.spin{
+  width:48px;height:48px;
+  border:3px solid var(--border);
+  border-top-color:var(--ink);
+  border-radius:50%;
+  animation:spin 0.8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+.proc-txt{font-size:0.9rem;font-weight:500;color:var(--ink);}
+.proc-sub{font-size:0.75rem;color:var(--light);font-weight:300;}
+
+/* Result */
+.pay-result{
+  display:none;position:absolute;inset:0;
+  background:var(--white);z-index:10;
+  flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;
+  padding:36px;gap:12px;
+}
+.pay-result.on{display:flex;animation:mslide 0.4s var(--ease);}
+.result-icon{font-size:52px;animation:popIn 0.5s var(--ease);}
+.result-title{
+  font-family:'Playfair Display',serif;
+  font-size:1.6rem;font-weight:400;color:var(--ink);
+}
+.result-sub{font-size:0.82rem;color:var(--mid);font-weight:300;line-height:1.7;}
+.result-id{
+  font-size:0.68rem;color:var(--light);
+  background:var(--off);padding:6px 14px;letter-spacing:0.08em;
+}
+.result-cta{
+  padding:12px 28px;border:none;
+  font-size:0.72rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.2em;
+  cursor:pointer;transition:all 0.25s;margin-top:4px;
+}
+.cta-ok{background:var(--moss);color:var(--white);}
+.cta-ok:hover{background:#3a5030;}
+.cta-retry{background:var(--rust);color:var(--white);}
+.cta-retry:hover{opacity:0.85;}
+
+/* Responsive */
+@media(max-width:760px){
+  .nav{padding:0 20px;}
+  .nav-steps{display:none;}
+  .page{padding:32px 20px 60px;}
+  .checkout-title{font-size:2rem;}
+  .addr-grid,.pay-grid{grid-template-columns:1fr;}
+  .form-grid{grid-template-columns:1fr;}
+  .co-section-body{padding:20px;}
+}
+</style>
 </head>
 <body>
-<nav style="display:flex; justify-content:space-between; align-items:center; padding: 20px 60px; border-bottom:1px solid #eee; background:#fff;">
-    <a href="index.php" style="font-family:'Inter', sans-serif; font-weight:700; letter-spacing:2px; text-decoration:none; color:#000;">URBANWEAR</a>
-    <div style="display:flex; align-items:center; gap:30px;">
-        <a href="men.php" style="text-decoration:none; color:#666; font-size:14px; text-transform:uppercase;">Men</a>
-        <a href="women.php" style="text-decoration:none; color:#666; font-size:14px; text-transform:uppercase;">Women</a>
-        <a href="kids.php" style="text-decoration:none; color:#666; font-size:14px; text-transform:uppercase;">Kids</a>
-        <a href="cart.php" style="position:relative; text-decoration:none; color:#000;">
-            <i class="fa-solid fa-bag-shopping" style="font-size:1.2rem;"></i>
-            <span class="cart-count-badge" style="display:none; position: absolute; top: -8px; right: -12px; background: #c5a059; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 700; min-width: 18px; text-align: center; display: flex; align-items: center; justify-content: center;">0</span>
-        </a>
+
+<!-- ══ NAV ══ -->
+<nav class="nav">
+  <a href="index.php" class="nav-logo">Urbanwear</a>
+  <div class="nav-steps">
+    <div class="nav-step active">
+      <div class="nav-step-num">1</div>
+      <span>Details</span>
     </div>
+    <div class="nav-step-sep"></div>
+    <div class="nav-step">
+      <div class="nav-step-num">2</div>
+      <span>Payment</span>
+    </div>
+    <div class="nav-step-sep"></div>
+    <div class="nav-step">
+      <div class="nav-step-num">3</div>
+      <span>Confirm</span>
+    </div>
+  </div>
+  <a href="cart.php" class="nav-back">
+    <i class="fa-solid fa-arrow-left" style="font-size:0.75rem;"></i>
+    Back to cart
+  </a>
 </nav>
 
-<div class="container">
-  <h2>Checkout</h2>
-  
-  <div id="successMsg" class="success-msg" style="display:none">
-    <h3>Order Confirmed! 🎉</h3>
-    <p>Thank you for your purchase.</p>
-    <a href="index.php" style="display:inline-block;margin-top:15px;color:#155724;text-decoration:underline">Continue Shopping</a>
+<!-- ══ PAGE ══ -->
+<div class="page">
+
+  <!-- Success screen (hidden until order placed) -->
+  <div class="success-screen" id="successScreen">
+    <div class="success-icon">✓</div>
+    <h2 class="success-title">Order Confirmed</h2>
+    <p class="success-sub">Thank you for your purchase.<br>You will receive a confirmation shortly.</p>
+    <div id="receiptArea" style="margin-bottom:24px;"></div>
+    <div class="success-actions">
+      <a href="index.php" class="btn-outline-dark">Continue Shopping</a>
+      <a href="user-dashboard.php" class="btn-solid-dark">View Orders</a>
+    </div>
   </div>
 
-  <div class="checkout-grid" id="checkoutGrid">
-    <!-- Left: Address & Details -->
-    <div>
-      <h3 style="margin-bottom:20px">Shipping Details</h3>
-      
-      <?php if ($isLoggedIn && !empty($addresses)): ?>
-        <div class="form-group">
-            <label>Select Saved Address</label>
-            <div id="savedAddresses">
-                <?php foreach($addresses as $idx => $addr): ?>
-                    <div class="address-card <?php echo $idx === 0 ? 'selected' : ''; ?>" onclick="selectAddress(this, <?php echo htmlspecialchars(json_encode($addr)); ?>)">
-                        <input type="radio" name="addr" <?php echo $idx === 0 ? 'checked' : ''; ?>>
-                        <strong><?php echo htmlspecialchars($user['name'] ?? ''); ?></strong><br>
-                        <?php echo htmlspecialchars($addr['street'] ?? ''); ?><br>
-                        <?php echo htmlspecialchars(($addr['city'] ?? '') . ', ' . ($addr['state'] ?? '') . ' - ' . ($addr['zip'] ?? '')); ?>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-            
-            <p style="margin:15px 0;text-align:center;color:#666">- OR -</p>
-            <button type="button" onclick="toggleManualAddress()" style="background:none;border:none;color:#007bff;cursor:pointer;text-decoration:underline">Enter New Address</button>
-        </div>
-      <?php endif; ?>
+  <!-- Checkout form -->
+  <div id="checkoutWrap">
 
-      <form id="addressForm" style="<?php echo ($isLoggedIn && !empty($addresses)) ? 'display:none' : 'display:block'; ?>">
-        <div class="form-group">
-          <label>Full Name</label>
-          <input id="name" value="<?php echo htmlspecialchars($user['name'] ?? ''); ?>" required />
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input id="email" type="email" value="<?php echo htmlspecialchars($user['email'] ?? ''); ?>" required />
-        </div>
-        <div class="form-group">
-            <label>Street Address</label>
-            <input id="street" required />
-        </div>
-        <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
-            <div><label>City</label><input id="city" required /></div>
-            <div><label>State</label><input id="state" required /></div>
-        </div>
-        <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
-            <div><label>Zip Code</label><input id="zip" required /></div>
-            <div><label>Phone</label><input id="phone" required /></div>
-        </div>
-      </form>
-    </div>
-    
-    <!-- Right: Summary & Pay -->
-    <div>
-      <h3 style="margin-bottom:20px">Order Summary</h3>
-      <div id="cartSummary" style="background:#f9f9f9;padding:20px;border-radius:8px"></div>
-      
-      <div style="margin-top:20px">
-        <button id="codBtn" class="btn btn-cod">Confirm Order (Cash on Delivery) 🚚</button>
+    <!-- Page title -->
+    <div class="checkout-head">
+      <div>
+        <h1 class="checkout-title">Checkout <em>Details</em></h1>
+        <p class="checkout-subtitle">Complete your order below</p>
       </div>
-      <div id="msg" style="margin-top:10px;text-align:center;color:#dc3545"></div>
+      <div class="checkout-secure">
+        <i class="fa-solid fa-lock" style="font-size:0.7rem;"></i>
+        <span>Secure &amp; Encrypted</span>
+      </div>
     </div>
+
+    <!-- ─ SECTION 1: DELIVERY ─ -->
+    <div class="co-section">
+      <div class="co-section-head">
+        <div>
+          <div class="co-section-num">Step 01</div>
+          <div class="co-section-title">Delivery Address</div>
+        </div>
+      </div>
+      <div class="co-section-body">
+
+        <?php if ($isLoggedIn && !empty($addresses)): ?>
+          <div class="addr-grid" id="savedAddrGrid">
+            <?php foreach($addresses as $idx => $addr): ?>
+              <div class="addr-option <?php echo $idx===0?'sel':''; ?>"
+                   onclick="selectAddr(this, <?php echo htmlspecialchars(json_encode($addr)); ?>)">
+                <div class="addr-check"></div>
+                <div class="addr-name"><?php echo htmlspecialchars($user['name']??''); ?></div>
+                <div class="addr-text">
+                  <?php echo htmlspecialchars($addr['street']??''); ?><br>
+                  <?php echo htmlspecialchars(($addr['city']??'').', '.($addr['state']??'').' — '.($addr['zip']??'')); ?><br>
+                  <?php echo htmlspecialchars($addr['phone']??''); ?>
+                </div>
+              </div>
+            <?php endforeach; ?>
+          </div>
+          <button class="addr-new-link" onclick="toggleManual()">
+            <i class="fa-solid fa-plus" style="font-size:0.6rem;"></i>
+            Enter different address
+          </button>
+        <?php endif; ?>
+
+        <form id="manualForm" style="<?php echo ($isLoggedIn&&!empty($addresses))?'display:none;margin-top:20px':''; ?>">
+          <div class="form-grid">
+            <div class="field"><label>Full Name</label><input id="f-name" value="<?php echo htmlspecialchars($user['name']??''); ?>" placeholder="Your name"></div>
+            <div class="field"><label>Email</label><input id="f-email" type="email" value="<?php echo htmlspecialchars($user['email']??''); ?>" placeholder="email@example.com"></div>
+          </div>
+          <div class="form-grid full" style="margin-top:14px;">
+            <div class="field"><label>Street Address</label><input id="f-street" placeholder="House no., street, area"></div>
+          </div>
+          <div class="form-grid" style="margin-top:14px;">
+            <div class="field"><label>City</label><input id="f-city" placeholder="City"></div>
+            <div class="field"><label>State</label><input id="f-state" placeholder="State"></div>
+          </div>
+          <div class="form-grid" style="margin-top:14px;">
+            <div class="field"><label>Pincode</label><input id="f-zip" placeholder="000000"></div>
+            <div class="field"><label>Phone</label><input id="f-phone" placeholder="+91 00000 00000"></div>
+          </div>
+        </form>
+
+      </div>
+    </div>
+
+    <!-- ─ SECTION 2: ORDER SUMMARY ─ -->
+    <div class="co-section">
+      <div class="co-section-head">
+        <div>
+          <div class="co-section-num">Step 02</div>
+          <div class="co-section-title">Order Summary</div>
+        </div>
+        <a href="cart.php" style="font-size:0.68rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--mid);">Edit cart →</a>
+      </div>
+      <div class="co-section-body">
+        <div id="summaryItems"></div>
+        <div class="summary-totals" id="summaryTotals"></div>
+      </div>
+    </div>
+
+    <!-- ─ SECTION 3: PAYMENT ─ -->
+    <div class="co-section">
+      <div class="co-section-head">
+        <div>
+          <div class="co-section-num">Step 03</div>
+          <div class="co-section-title">Payment Method</div>
+        </div>
+      </div>
+      <div class="co-section-body">
+
+        <div class="pay-grid">
+          <div class="pay-opt sel" id="pm-cod" onclick="pickPay('cod')">
+            <span class="pay-tick"></span>
+            <span class="pay-opt-icon">🚚</span>
+            <div>
+              <div class="pay-opt-label">Cash on Delivery</div>
+              <div class="pay-opt-sub">Pay when you receive</div>
+            </div>
+          </div>
+          <div class="pay-opt" id="pm-upi" onclick="pickPay('upi')">
+            <span class="pay-tick"></span>
+            <span class="pay-opt-icon">📱</span>
+            <div>
+              <div class="pay-opt-label">UPI</div>
+              <div class="pay-opt-sub">GPay, PhonePe, Paytm</div>
+            </div>
+          </div>
+          <div class="pay-opt" id="pm-card" onclick="pickPay('card')">
+            <span class="pay-tick"></span>
+            <span class="pay-opt-icon">💳</span>
+            <div>
+              <div class="pay-opt-label">Credit / Debit Card</div>
+              <div class="pay-opt-sub">Visa, Mastercard, Rupay</div>
+            </div>
+          </div>
+          <div class="pay-opt" id="pm-nb" onclick="pickPay('netbanking')">
+            <span class="pay-tick"></span>
+            <span class="pay-opt-icon">🏦</span>
+            <div>
+              <div class="pay-opt-label">Net Banking</div>
+              <div class="pay-opt-sub">All major banks</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- COD place order -->
+        <div id="codAction">
+          <button class="place-btn" id="codBtn">
+            <span>Confirm Order</span>
+            <span class="btn-amount" id="codAmt"></span>
+          </button>
+          <p class="place-note">🚚 &nbsp;Pay cash when your order arrives. No prepayment required.</p>
+        </div>
+
+        <!-- Online proceed -->
+        <div id="onlineAction" style="display:none;">
+          <button class="place-btn" onclick="openModal()">
+            <i class="fa-solid fa-lock" style="font-size:0.7rem;"></i>
+            <span>Proceed to Pay</span>
+            <span class="btn-amount" id="onlineAmt"></span>
+          </button>
+          <p class="place-note">🔒 &nbsp;128-bit encrypted secure payment gateway.</p>
+        </div>
+
+        <div id="errMsg" style="margin-top:12px;text-align:center;font-size:0.82rem;color:var(--rust);"></div>
+      </div>
+    </div>
+
+  </div><!-- /checkoutWrap -->
+</div><!-- /page -->
+
+<!-- ══ PAYMENT MODAL ══ -->
+<div class="modal-wrap" id="payModal">
+  <div class="modal-box">
+
+    <div class="modal-top">
+      <div>
+        <div class="modal-top-brand">Urbanwear</div>
+        <div style="font-size:0.62rem;color:rgba(255,255,255,0.35);margin-top:2px;letter-spacing:0.1em;">Secure Checkout</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div class="modal-top-amt" id="modalAmt">₹0</div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <div class="modal-tabs">
+        <button class="modal-tab on" id="mt-upi"  onclick="switchTab('upi')">📱 UPI</button>
+        <button class="modal-tab"    id="mt-card" onclick="switchTab('card')">💳 Card</button>
+        <button class="modal-tab"    id="mt-nb"   onclick="switchTab('netbanking')">🏦 Net Banking</button>
+      </div>
+
+      <!-- UPI -->
+      <div class="modal-panel on" id="mp-upi">
+        <div class="mupi-logos">
+          <span class="mupi-logo">GPay</span>
+          <span class="mupi-logo">PhonePe</span>
+          <span class="mupi-logo">Paytm</span>
+          <span class="mupi-logo">BHIM</span>
+        </div>
+        <div class="mfield">
+          <label>UPI ID</label>
+          <input id="upiId" placeholder="yourname@upi" autocomplete="off">
+        </div>
+        <div style="font-size:0.7rem;color:var(--light);margin-bottom:4px;">e.g. 9876543210@ybl, name@okaxis</div>
+      </div>
+
+      <!-- Card -->
+      <div class="modal-panel" id="mp-card">
+        <div class="mfield"><label>Card Number</label><input id="cardNum" placeholder="0000 0000 0000 0000" maxlength="19" oninput="fmtCard(this)"></div>
+        <div class="mfield-row">
+          <div class="mfield"><label>Expiry</label><input id="cardExp" placeholder="MM / YY" maxlength="7" oninput="fmtExp(this)"></div>
+          <div class="mfield"><label>CVV</label><input id="cardCvv" type="password" placeholder="•••" maxlength="3"></div>
+        </div>
+        <div class="mfield"><label>Name on Card</label><input id="cardName" placeholder="As printed on card"></div>
+      </div>
+
+      <!-- Net Banking -->
+      <div class="modal-panel" id="mp-nb">
+        <div class="mfield">
+          <label>Select Bank</label>
+          <select id="bankSel">
+            <option value="">— Choose your bank —</option>
+            <option>State Bank of India</option>
+            <option>HDFC Bank</option>
+            <option>ICICI Bank</option>
+            <option>Axis Bank</option>
+            <option>Kotak Mahindra Bank</option>
+            <option>Punjab National Bank</option>
+            <option>Bank of Baroda</option>
+            <option>Canara Bank</option>
+            <option>IndusInd Bank</option>
+            <option>Yes Bank</option>
+          </select>
+        </div>
+        <div style="font-size:0.72rem;color:var(--mid);background:var(--off);padding:10px 14px;margin-bottom:4px;">
+          You will be redirected to your bank's secure portal.
+        </div>
+      </div>
+
+      <button class="pay-now-btn" id="payNowBtn" onclick="doPayment()">
+        Pay ₹<span id="payNowAmt">0</span>
+      </button>
+      <div class="modal-note">🔒 &nbsp;Secured by Urbanwear &bull; End-to-end encrypted</div>
+      <span class="fail-link" onclick="doPayment(true)">Simulate payment failure (demo)</span>
+    </div>
+
+    <!-- Processing overlay -->
+    <div class="pay-proc" id="procOverlay">
+      <div class="spin"></div>
+      <div class="proc-txt">Processing Payment</div>
+      <div class="proc-sub">Please do not close this window</div>
+    </div>
+
+    <!-- Success result -->
+    <div class="pay-result" id="resSuccess">
+      <div class="result-icon">✓</div>
+      <div class="result-title">Payment Successful</div>
+      <div class="result-sub">Your order has been placed.<br>A confirmation will be sent shortly.</div>
+      <div class="result-id" id="resTxnId">TXN ID: —</div>
+      <button class="result-cta cta-ok" onclick="onSuccess()">View Order →</button>
+    </div>
+
+    <!-- Failure result -->
+    <div class="pay-result" id="resFail">
+      <div class="result-icon" style="font-size:40px;">✕</div>
+      <div class="result-title" style="color:var(--rust);">Payment Failed</div>
+      <div class="result-sub">Something went wrong.<br>Please try a different method.</div>
+      <button class="result-cta cta-retry" onclick="resetModal()">Try Again</button>
+    </div>
+
   </div>
 </div>
 
+<!-- Scripts -->
 <script>
-const CART_KEY = 'urbanwear_cart';
+const CART_KEY    = 'urbanwear_cart';
 const SUMMARY_KEY = 'urbanwear_cart_summary';
-const API_ROOT = 'http://localhost:5000';
-const AUTH_TOKEN = "<?php echo $token; ?>";
-const IS_LOGGED_IN = <?php echo $isLoggedIn ? 'true' : 'false'; ?>;
+const API_ROOT    = 'http://127.0.0.1:5000';
+const AUTH_TOKEN  = "<?php echo $token; ?>";
+const IS_LOGGED_IN = <?php echo $isLoggedIn?'true':'false'; ?>;
 
-// Selected address state
-let selectedAddress = <?php echo ($isLoggedIn && !empty($addresses)) ? json_encode($addresses[0]) : 'null'; ?>;
-let useManualAddress = <?php echo ($isLoggedIn && !empty($addresses)) ? 'false' : 'true'; ?>;
+let selAddr = <?php echo ($isLoggedIn&&!empty($addresses))?json_encode($addresses[0]):'null'; ?>;
+let useManual = <?php echo ($isLoggedIn&&!empty($addresses))?'false':'true'; ?>;
+let activePayMethod = 'cod';
+let activeModalTab  = 'upi';
 
-function getCart(){
-  return JSON.parse(localStorage.getItem(CART_KEY) || '[]');
+function getCart(){ return JSON.parse(localStorage.getItem(CART_KEY)||'[]'); }
+
+/* ── Init ── */
+async function init() {
+  if (typeof window.refreshCartFromBackend === 'function') {
+    await window.refreshCartFromBackend();
+  }
+  renderSummary();
 }
 
-async function initCheckout() {
-    console.log('[DEBUG] Initializing Checkout...');
-    console.log('[DEBUG] API_ROOT:', API_ROOT);
-    
-    // Ensure we have latest data from backend before rendering
-    if (typeof window.refreshCartFromBackend === 'function') {
-        console.log('[DEBUG] Calling refreshCartFromBackend...');
-        const backendData = await window.refreshCartFromBackend();
-        console.log('[DEBUG] Backend Data Received on Checkout Page:', backendData);
-    } else {
-        console.error('[CRITICAL] refreshCartFromBackend not found! Check assets/js/cart.js');
-    }
-    renderSummary();
-}
-
+/* ── Render Summary ── */
 function renderSummary(){
-    const cart = getCart();
-    const el = document.getElementById('cartSummary');
-    const summaryStored = localStorage.getItem(SUMMARY_KEY);
-    
-    console.log('[DEBUG] Rendering Summary. Cart:', cart);
-    console.log('[DEBUG] Backend Summary Stored:', summaryStored);
+  const cart = getCart();
+  const st   = localStorage.getItem(SUMMARY_KEY);
+  const sum  = st ? JSON.parse(st) : {totalMRP:0,totalDiscount:0,subtotal:0,totalGST:0,deliveryFee:49,grandTotal:0};
 
-    if (!cart || cart.length === 0) {
-      el.innerHTML = '<p>Cart is empty. <a href="index.php">Go shop</a></p>';
-      document.getElementById('codBtn').disabled = true;
-      return;
-    }
+  const itemsEl  = document.getElementById('summaryItems');
+  const totalsEl = document.getElementById('summaryTotals');
 
-    const summary = summaryStored ? JSON.parse(summaryStored) : { totalMRP:0, totalDiscount:0, subtotal:0, totalGST:0, deliveryFee:49, grandTotal:0 };
+  if(!cart||!cart.length){
+    itemsEl.innerHTML='<p style="color:var(--light);font-size:0.88rem;">Your cart is empty. <a href="index.php" style="color:var(--ink);">Continue shopping</a></p>';
+    totalsEl.innerHTML='';
+    return;
+  }
 
-    let itemsHtml = '';
-    cart.forEach(item => {
-      const price = parseFloat(item.price) || 0;
-      const qty = parseInt(item.qty) || 1;
-      const disc = parseFloat(item.discount_percentage) || 0;
-      
-      itemsHtml += `
-        <div class="summary-item">
-            <div style="flex:1">
-                <strong>${item.name}</strong> × ${qty}
-                <div style="font-size:12px; color:#666">
-                    MRP: ₹${price.toLocaleString('en-IN')} ${disc > 0 ? `| ${disc}% OFF` : ''}
-                </div>
-            </div>
-            <div style="text-align:right">
-                ₹${Math.round(item.taxableValue || (price * qty * (1 - disc/100))).toLocaleString('en-IN')}
-                <div style="font-size:11px; color:#888">+ GST</div>
-            </div>
-        </div>`;
-    });
+  itemsEl.innerHTML = cart.map(i=>`
+    <div class="summary-line">
+      <div class="sline-left">
+        <div class="sline-img"><img src="${i.image||''}" onerror="this.style.display='none'"></div>
+        <div>
+          <div class="sline-name">${i.name}</div>
+          <div class="sline-meta">
+            ${i.size?'Size: '+i.size+' &nbsp;·&nbsp; ':''} Qty: ${i.qty||1}
+            ${parseFloat(i.discount_percentage)>0?' &nbsp;·&nbsp; '+i.discount_percentage+'% off':''}
+          </div>
+        </div>
+      </div>
+      <div class="sline-price">₹${Math.round(i.taxableValue||(i.price*(i.qty||1)*(1-(i.discount_percentage||0)/100))).toLocaleString('en-IN')}</div>
+    </div>`).join('');
 
-    window.orderTotal = summary.grandTotal;
+  totalsEl.innerHTML = `
+    <div class="tot-row"><span>Total MRP</span><span>₹${sum.totalMRP.toLocaleString('en-IN')}</span></div>
+    <div class="tot-row disc"><span>Discount</span><span>−₹${(+sum.totalDiscount).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
+    <div class="tot-row"><span>GST</span><span>+₹${(+sum.totalGST).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
+    <div class="tot-row"><span>Delivery</span><span>₹${sum.deliveryFee}</span></div>
+    <div class="tot-row bold"><span>Total</span><span>₹${sum.grandTotal.toLocaleString('en-IN')}</span></div>`;
 
-    // RESTORATION: Strictly use backend summary fields for breakdown
-    el.innerHTML = itemsHtml + 
-      `<div style="border-top:1px dashed #ddd; margin-top:10px; padding-top:10px;">
-          <div class="summary-item"><span>Total MRP</span><span>₹${summary.totalMRP.toLocaleString('en-IN')}</span></div>
-          <div class="summary-item" style="color:#28a745"><span>Total Discount</span><span>-₹${summary.totalDiscount.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
-          <div class="summary-item" style="font-weight:600"><span>Subtotal</span><span>₹${summary.subtotal.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
-          <div class="summary-item"><span>Total GST</span><span>+₹${summary.totalGST.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
-          <div class="summary-item"><span>Delivery Fee</span><span>₹${summary.deliveryFee}</span></div>
-       </div>
-       <div class="total-row">
-          <span>Final Total</span><span>₹${summary.grandTotal.toLocaleString('en-IN')}</span>
-       </div>`;
+  window.orderTotal = sum.grandTotal;
+  const fmt = '₹'+sum.grandTotal.toLocaleString('en-IN');
+  document.getElementById('codAmt').textContent    = fmt;
+  document.getElementById('onlineAmt').textContent = fmt;
+  document.getElementById('modalAmt').textContent  = fmt;
+  document.getElementById('payNowAmt').textContent = sum.grandTotal.toLocaleString('en-IN');
 }
 
-function selectAddress(el, addr) {
-    document.querySelectorAll('.address-card').forEach(c => c.classList.remove('selected'));
-    document.querySelectorAll('.address-card input').forEach(i => i.checked = false);
-    el.classList.add('selected');
-    el.querySelector('input').checked = true;
-    
-    selectedAddress = addr;
-    useManualAddress = false;
-    document.getElementById('addressForm').style.display = 'none';
+/* ── Address ── */
+function selectAddr(el, addr){
+  document.querySelectorAll('.addr-option').forEach(e=>e.classList.remove('sel'));
+  el.classList.add('sel');
+  selAddr = addr; useManual = false;
+  document.getElementById('manualForm').style.display='none';
+}
+function toggleManual(){
+  useManual = true; selAddr = null;
+  document.getElementById('manualForm').style.display='block';
+  document.getElementById('manualForm').style.marginTop='20px';
+  document.querySelectorAll('.addr-option').forEach(e=>e.classList.remove('sel'));
 }
 
-function toggleManualAddress() {
-    useManualAddress = true;
-    selectedAddress = null;
-    document.getElementById('addressForm').style.display = 'block';
-    
-    document.querySelectorAll('.address-card').forEach(c => c.classList.remove('selected'));
-    document.querySelectorAll('.address-card input').forEach(i => i.checked = false);
+/* ── Payment method ── */
+function pickPay(m){
+  activePayMethod = m;
+  ['cod','upi','card','nb'].forEach(k=>{
+    const el=document.getElementById('pm-'+k);
+    if(el) el.classList.toggle('sel', k===m || (k==='nb'&&m==='netbanking'));
+  });
+  // also handle netbanking id
+  if(m==='netbanking'){
+    document.getElementById('pm-nb')?.classList.add('sel');
+  }
+  document.getElementById('codAction').style.display    = m==='cod'?'block':'none';
+  document.getElementById('onlineAction').style.display = m!=='cod'?'block':'none';
+  if(['upi','card','netbanking'].includes(m)) activeModalTab = m==='netbanking'?'netbanking':m;
 }
 
-function getOrderPayload() {
-    const cart = getCart();
-    const summaryStored = localStorage.getItem(SUMMARY_KEY);
-    const summary = summaryStored ? JSON.parse(summaryStored) : { grandTotal: 0 };
-    
-    let shipping = {};
-    if (useManualAddress) {
-        shipping = {
-            name: document.getElementById('name').value,
-            email: document.getElementById('email').value,
-            address: document.getElementById('street').value,
-            city: document.getElementById('city').value,
-            state: document.getElementById('state').value,
-            zip: document.getElementById('zip').value,
-            mobile: document.getElementById('phone').value
-        };
-        if(!shipping.name || !shipping.email || !shipping.address || !shipping.mobile) {
-            alert("Please fill all details");
-            return null;
-        }
-    } else {
-        if(!selectedAddress) {
-            alert("Please select an address");
-            return null;
-        }
-        shipping = {
-            name: "<?php echo $user['name'] ?? ''; ?>",
-            email: "<?php echo $user['email'] ?? ''; ?>",
-            address: selectedAddress.street,
-            city: selectedAddress.city,
-            state: selectedAddress.state,
-            zip: selectedAddress.zip,
-            mobile: selectedAddress.phone
-        };
-    }
-
-    return {
-        products: cart.map(i => ({
-            productId: i.id,
-            quantity: i.qty || 1,
-            size: i.size || 'M',
-            color: i.color || 'Black'
-        })),
-        shipping: shipping, 
-        paymentMethod: 'COD',
-        totalAmount: summary.grandTotal
+/* ── Build payload ── */
+function buildPayload(payMode, payInfo){
+  const cart = getCart();
+  const st   = localStorage.getItem(SUMMARY_KEY);
+  const sum  = st ? JSON.parse(st) : {grandTotal:0};
+  let sh = {};
+  if(useManual){
+    sh = {
+      name:    document.getElementById('f-name').value,
+      email:   document.getElementById('f-email').value,
+      address: document.getElementById('f-street').value,
+      city:    document.getElementById('f-city').value,
+      state:   document.getElementById('f-state').value,
+      zip:     document.getElementById('f-zip').value,
+      mobile:  document.getElementById('f-phone').value
     };
+    if(!sh.name||!sh.email||!sh.address||!sh.mobile){ alert('Please fill all delivery details'); return null; }
+  } else {
+    if(!selAddr){ alert('Please select a delivery address'); return null; }
+    sh = {
+      name:    "<?php echo htmlspecialchars($user['name']??''); ?>",
+      email:   "<?php echo htmlspecialchars($user['email']??''); ?>",
+      address: selAddr.street,
+      city:    selAddr.city,
+      state:   selAddr.state,
+      zip:     selAddr.zip,
+      mobile:  selAddr.phone
+    };
+  }
+  const p = {
+    products: cart.map(i=>({productId:i.id,quantity:i.qty||1,size:i.size||'M',color:i.color||'Black'})),
+    shipping: sh,
+    paymentMethod: payMode||'COD',
+    totalAmount: sum.grandTotal
+  };
+  if(payInfo) p.paymentInfo = payInfo;
+  return p;
 }
 
-document.getElementById('codBtn').addEventListener('click', async () => {
-    const payload = getOrderPayload();
-    if(!payload) return;
+/* ── COD ── */
+document.getElementById('codBtn').addEventListener('click', async ()=>{
+  const p = buildPayload('COD', null);
+  console.log("Order payload:", p);
+  if(!p) return;
+  const btn = document.getElementById('codBtn');
+  btn.disabled=true;
+  btn.innerHTML='<span>Placing Order…</span>';
+  try{
+    const r = await fetch(API_ROOT+'/api/v1/orders',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},body:JSON.stringify(p)});
+    console.log("API response:", r);
+    let d;
+    try { d = await r.json(); } catch(err) { d = {success: false, message: 'Failed to parse JSON response'}; }
+    console.log("API data:", d);
     
-    const btn = document.getElementById('codBtn');
-    btn.disabled = true;
-    btn.innerText = 'Processing...';
-    
-    try {
-        const url = API_ROOT + '/api/v1/orders';
-        const headers = { 
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + AUTH_TOKEN 
-        };
+    if(!r.ok) { throw new Error(d.message || "Failed to place order"); }
 
-        const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
-        const d = await r.json();
-
-        if (d.success) {
-            localStorage.removeItem(CART_KEY);
-            localStorage.removeItem(SUMMARY_KEY);
-            document.getElementById('checkoutGrid').style.display = 'none';
-            document.getElementById('successMsg').style.display = 'block';
-        } else {
-            throw new Error(d.message);
-        }
-    } catch (e) {
-        alert("Order Failed: " + e.message);
-        btn.disabled = false;
-        btn.innerText = 'Confirm Order (Cash on Delivery) 🚚';
-    }
+    if(d.success){
+      localStorage.removeItem(CART_KEY); localStorage.removeItem(SUMMARY_KEY);
+      if(d.data?._id) setReceiptBtn(d.data._id);
+      showSuccess();
+    } else { throw new Error(d.message || "Failed to fetch"); }
+  } catch(e){
+    alert('Order failed: '+ (e.message || 'Failed to fetch'));
+    btn.disabled=false;
+    btn.innerHTML='<span>Confirm Order</span><span class="btn-amount">'+document.getElementById('codAmt').textContent+'</span>';
+  }
 });
 
-document.addEventListener('DOMContentLoaded', initCheckout);
+/* ── Modal ── */
+function openModal(){
+  resetModal();
+  switchTab(activeModalTab==='netbanking'?'netbanking':activeModalTab||'upi');
+  document.getElementById('payModal').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeModal(){
+  document.getElementById('payModal').classList.remove('open');
+  document.body.style.overflow='';
+}
+document.getElementById('payModal').addEventListener('click',e=>{if(e.target===document.getElementById('payModal'))closeModal();});
+
+function switchTab(t){
+  activeModalTab=t;
+  ['upi','card','nb'].forEach(k=>{
+    const tid = t==='netbanking'?'nb':t;
+    document.getElementById('mt-'+k)?.classList.toggle('on',k===tid);
+    document.getElementById('mp-'+k)?.classList.toggle('on',k===tid);
+  });
+}
+function resetModal(){
+  document.getElementById('procOverlay').classList.remove('on');
+  document.getElementById('resSuccess').classList.remove('on');
+  document.getElementById('resFail').classList.remove('on');
+  document.getElementById('payNowBtn').disabled=false;
+}
+
+/* ── Validate modal inputs ── */
+function validateModal(){
+  const t = activeModalTab==='nb'?'netbanking':activeModalTab;
+  if(t==='upi'){
+    const v=document.getElementById('upiId').value.trim();
+    if(!v||!v.includes('@')){ alert('Please enter a valid UPI ID'); return false; }
+  } else if(t==='card'){
+    if(document.getElementById('cardNum').value.replace(/\s/g,'').length<16){ alert('Invalid card number'); return false; }
+    if(!document.getElementById('cardExp').value.includes('/')){ alert('Invalid expiry'); return false; }
+    if(document.getElementById('cardCvv').value.length<3){ alert('Invalid CVV'); return false; }
+    if(!document.getElementById('cardName').value.trim()){ alert('Enter name on card'); return false; }
+  } else if(t==='netbanking'){
+    if(!document.getElementById('bankSel').value){ alert('Please select a bank'); return false; }
+  }
+  return true;
+}
+
+/* ── Do payment (simulated) ── */
+function doPayment(fail=false){
+  if(!validateModal()) return;
+  document.getElementById('payNowBtn').disabled=true;
+  document.getElementById('procOverlay').classList.add('on');
+  const delay = fail ? 2000 : Math.floor(Math.random()*1000)+2000;
+  setTimeout(()=>{
+    document.getElementById('procOverlay').classList.remove('on');
+    if(fail){ document.getElementById('resFail').classList.add('on'); }
+    else { handlePaySuccess(); }
+  }, delay);
+}
+
+async function handlePaySuccess(){
+  const txnId = 'SIM-'+Date.now().toString().slice(-8);
+  document.getElementById('resTxnId').textContent = 'TXN ID: '+txnId;
+  const t = activeModalTab==='nb'?'netbanking':activeModalTab;
+  const modeLabel = t==='upi'?'UPI':t==='card'?'Card':'NetBanking - '+(document.getElementById('bankSel').value||'');
+  const p = buildPayload(modeLabel, {status:'SUCCESS',paymentId:txnId,paymentMode:modeLabel,paymentStatus:'Paid (Simulated)',transactionTime:new Date().toISOString()});
+  console.log("Order payload:", p);
+  if(!p){ closeModal(); return; }
+  try{
+    const r = await fetch(API_ROOT+'/api/v1/orders',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},body:JSON.stringify(p)});
+    console.log("API response:", r);
+    let d;
+    try { d = await r.json(); } catch(err) { d = {success: false, message: 'Failed to parse JSON response'}; }
+    console.log("API data:", d);
+
+    if(!r.ok) { throw new Error(d.message || "Failed to place order"); }
+
+    if(d.success){
+      localStorage.removeItem(CART_KEY); localStorage.removeItem(SUMMARY_KEY);
+      window._lastOrderId = d.data._id;
+      document.getElementById('resSuccess').classList.add('on');
+    } else { throw new Error(d.message || "Failed to fetch"); }
+  } catch(e){
+    console.error("Payment API error:", e);
+    document.getElementById('errMsg').innerText = 'Order error: ' + (e.message || 'Failed to fetch');
+    document.getElementById('resFail').classList.add('on');
+  }
+}
+
+function onSuccess(){
+  closeModal();
+  if(window._lastOrderId) setReceiptBtn(window._lastOrderId);
+  showSuccess();
+}
+
+/* ── Success screen ── */
+function showSuccess(){
+  document.getElementById('checkoutWrap').style.display='none';
+  document.getElementById('successScreen').style.display='block';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function setReceiptBtn(id){
+  document.getElementById('receiptArea').innerHTML=`
+    <button onclick="dlReceipt('${id}')" class="btn-outline-dark" style="display:inline-flex;align-items:center;gap:8px;">
+      <i class="fa-solid fa-file-pdf"></i> Download Receipt
+    </button>`;
+}
+async function dlReceipt(id){
+  try{
+    const r = await fetch(API_ROOT+'/api/v1/orders/'+id+'/receipt',{headers:{'Authorization':'Bearer '+AUTH_TOKEN}});
+    if(!r.ok) throw new Error('Failed');
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'receipt-'+id+'.pdf';
+    a.click(); a.remove();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+/* ── Card / Expiry formatters ── */
+function fmtCard(i){ let v=i.value.replace(/\D/g,'').substring(0,16); i.value=v.replace(/(\d{4})(?=\d)/g,'$1 '); }
+function fmtExp(i){ let v=i.value.replace(/\D/g,'').substring(0,4); if(v.length>=3) v=v.substring(0,2)+' / '+v.substring(2); i.value=v; }
+
+document.addEventListener('DOMContentLoaded', init);
 </script>
 
 <script>
-    window.IS_LOGGED_IN = <?php echo $isLoggedIn ? 'true' : 'false'; ?>;
-    window.AUTH_TOKEN = '<?php echo $token; ?>';
+  window.IS_LOGGED_IN = <?php echo $isLoggedIn?'true':'false'; ?>;
+  window.AUTH_TOKEN   = '<?php echo $token; ?>';
 </script>
 <script src="assets/js/cart.js"></script>
 </body>

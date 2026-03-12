@@ -10,9 +10,9 @@ require_once 'api-helper.php';
 // If already logged in, redirect
 if (isLoggedIn()) {
     if (isAdmin()) {
-        header('Location: /clothing_project/admin-dashboard.php');
+        header('Location: admin-dashboard.php');
     } else {
-        header('Location: /clothing_project/user-dashboard.php');
+        header('Location: user-dashboard.php');
     }
     exit;
 }
@@ -56,10 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $role = strtolower($user['role'] ?? 'user');
                 if ($role === 'admin') {
                     $_SESSION['admin_logged_in'] = true;
-                    header('Location: /clothing_project/admin-dashboard.php');
+                    header('Location: admin-dashboard.php');
                     exit;
                 } else {
-                    header('Location: /clothing_project/user-dashboard.php');
+                    header('Location: user-dashboard.php');
                     exit;
                 }
             } else {
@@ -131,11 +131,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="password" id="password" name="password" required placeholder="Type your password">
                     </div>
 
+                    <div class="forgot-link-wrapper" style="margin-bottom: 20px; text-align: right;">
+                        <a href="forgot-password.php" style="color: #666; font-size: 0.9rem; text-decoration: none;">Forgot Password?</a>
+                    </div>
+
                     <button type="submit" class="btn-auth">Sign In</button>
                 </form>
 
                 <div class="auth-links">
-                    <p>New here? <a href="/clothing_project/signup.php">Create an Account</a></p>
+                    <p>New here? <a href="signup.php">Create an Account</a></p>
                 </div>
             </div>
         </div>
